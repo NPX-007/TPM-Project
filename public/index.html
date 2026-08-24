@@ -5,7 +5,7 @@
     <title>ระบบจัดการ TPM และแผนบำรุงรักษา</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
-    <!-- เพิ่ม SheetJS สำหรับแปลงตารางเป็น Excel -->
+    <!-- SheetJS สำหรับแปลงตารางเป็น Excel -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <style>
         body { background-color: #f8f9fa; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
@@ -19,29 +19,6 @@
         .bg-blue { background-color: #0d6efd !important; }
         .bg-gray { background-color: #6c757d !important; }
         .table>tbody>tr>td, .table>thead>tr>th { vertical-align: top !important; }
-        
-        /* สไตล์สำหรับการ์ดเครื่องจักร */
-        .machine-item {
-            cursor: pointer;
-            transition: all 0.2s ease-in-out;
-            position: relative;
-            border: 1px solid rgba(0,0,0,0.125);
-        }
-        .machine-item:hover {
-            background-color: #f1f3f5;
-            border-color: #0d6efd;
-        }
-        .machine-item.selected-machine {
-            border: 2px solid #0d6efd;
-            background-color: #e7f1ff;
-        }
-        .btn-close-abs {
-            position: absolute;
-            top: 10px;
-            right: 10px;
-            font-size: 0.75rem;
-            z-index: 5;
-        }
     </style>
 </head>
 <body>
@@ -69,21 +46,36 @@
             <div class="row">
                 <div class="col-md-4">
                     <div class="card p-3">
-                        <h5 class="text-secondary">➕ เพิ่มเครื่องจักร</h5>
-                        <form id="machineForm" class="mb-3">
+                        <h5 class="text-secondary mb-3">🏭 เลือกเครื่องจักร</h5>
+                        
+                        <!-- Dropdown เลือกเครื่องจักร -->
+                        <div class="mb-3">
+                            <select id="machineDropdown" class="form-select form-select-lg border-primary fw-bold text-dark" onchange="onMachineDropdownChange(this.value)">
+                                <option value="">-- กรุณาเลือกเครื่องจักร --</option>
+                            </select>
+                        </div>
+
+                        <!-- ปุ่มจัดการเครื่องจักรปัจจุบัน (แก้ไข / ลบ) -->
+                        <div id="selectedMachineActionBtns" class="d-flex gap-2 mb-4" style="display: none !important;">
+                            <button class="btn btn-outline-primary btn-sm flex-fill" onclick="openEditCurrentMachine()">✏️ แก้ไขเครื่องนี้</button>
+                            <button class="btn btn-outline-danger btn-sm flex-fill" onclick="deleteCurrentMachine()">🗑️ ลบเครื่องนี้</button>
+                        </div>
+
+                        <hr>
+
+                        <h5 class="text-secondary">➕ เพิ่มเครื่องจักรใหม่</h5>
+                        <form id="machineForm" class="mt-2">
                             <input type="text" id="machName" class="form-control mb-2" placeholder="ชื่อเครื่องจักร" required>
                             <input type="text" id="machLoc" class="form-control mb-2" placeholder="ตำแหน่ง / โซน" required>
-                            <button type="submit" class="btn btn-primary w-100">บันทึกเครื่องจักร</button>
+                            <button type="submit" class="btn btn-success w-100">บันทึกเพิ่มเครื่องจักร</button>
                         </form>
-                        
-                        <h5 class="text-secondary">📋 รายชื่อเครื่องจักร</h5>
-                        <div id="machineList" class="d-flex flex-column gap-2"></div>
                     </div>
                 </div>
                 
                 <div class="col-md-8">
                     <div class="card p-3" id="planCard" style="display:none;">
-                        <h4 id="selectedMachineTitle" class="text-dark"></h4>
+                        <h4 id="selectedMachineTitle" class="text-dark fw-bold"></h4>
+                        <small id="selectedMachineLoc" class="text-muted d-block mb-3"></small>
                         <hr>
                         <form id="planForm" class="mb-4 bg-light p-3 rounded" enctype="multipart/form-data">
                             <h6>➕ เพิ่มแผน TPM</h6>
@@ -327,6 +319,8 @@
 <script>
     let currentMachineId = null;
     let currentMachineName = '';
+    let currentMachineLocation = '';
+    let machinesData = [];
 
     document.addEventListener('DOMContentLoaded', loadMachines);
 
@@ -362,67 +356,102 @@
 
     async function loadMachines() {
         const res = await fetch('/api/machines');
-        const machines = await res.json();
-        const list = document.getElementById('machineList');
-        list.innerHTML = '';
+        machinesData = await res.json();
+        const dropdown = document.getElementById('machineDropdown');
         
-        if (machines.length === 0) {
-            list.innerHTML = `<div class="text-muted text-center py-2">ยังไม่มีข้อมูลเครื่องจักร</div>`;
+        // เคลียร์ตัวเลือกเดิม (เว้นอันแรกไว้)
+        dropdown.innerHTML = `<option value="">-- กรุณาเลือกเครื่องจักร --</option>`;
+        
+        machinesData.forEach(m => {
+            const opt = document.createElement('option');
+            opt.value = m.id;
+            opt.textContent = `${m.name} (${m.location})`;
+            if (currentMachineId == m.id) {
+                opt.selected = true;
+            }
+            dropdown.appendChild(opt);
+        });
+
+        // ถ้ามีเครื่องจักรที่กำลังเลือกอยู่ ให้คงสถานะหน้าจอไว้
+        if (currentMachineId) {
+            const found = machinesData.find(m => m.id == currentMachineId);
+            if (found) {
+                currentMachineName = found.name;
+                currentMachineLocation = found.location;
+                document.getElementById('selectedMachineTitle').innerText = `เครื่อง: ${found.name}`;
+                document.getElementById('selectedMachineLoc').innerText = `ตำแหน่ง: ${found.location}`;
+                document.getElementById('selectedMachineActionBtns').style.display = 'flex';
+                document.getElementById('planCard').style.display = 'block';
+            } else {
+                currentMachineId = null;
+                document.getElementById('planCard').style.display = 'none';
+                document.getElementById('selectedMachineActionBtns').style.display = 'none';
+            }
+        }
+    }
+
+    function onMachineDropdownChange(id) {
+        if (!id) {
+            currentMachineId = null;
+            document.getElementById('planCard').style.display = 'none';
+            document.getElementById('selectedMachineActionBtns').style.display = 'none';
             return;
         }
-
-        machines.forEach(m => {
-            const div = document.createElement('div');
-            const isSelected = currentMachineId == m.id;
-            div.className = `card p-3 machine-item ${isSelected ? 'selected-machine' : ''}`;
-            div.innerHTML = `
-                <button type="button" class="btn-close btn-close-abs" title="ลบเครื่องจักร" onclick="confirmDeleteMachine(event, ${m.id}, '${m.name}')"></button>
-                <div onclick="selectMachine(${m.id}, '${m.name}')">
-                    <h6 class="mb-1 fw-bold text-dark pe-4">${m.name}</h6>
-                    <small class="text-muted">${m.location}</small>
-                </div>
-                <div class="mt-2 text-end" onclick="event.stopPropagation()">
-                    <button class="btn btn-sm btn-outline-secondary py-0 px-2" onclick="openEditMachineModal(event, ${JSON.stringify(m).replace(/"/g, '&quot;')})">แก้ไข</button>
-                </div>
-            `;
-            list.appendChild(div);
-        });
+        const found = machinesData.find(m => m.id == id);
+        if (found) {
+            currentMachineId = found.id;
+            currentMachineName = found.name;
+            currentMachineLocation = found.location;
+            document.getElementById('selectedMachineTitle').innerText = `เครื่อง: ${found.name}`;
+            document.getElementById('selectedMachineLoc').innerText = `ตำแหน่ง: ${found.location}`;
+            document.getElementById('selectedMachineActionBtns').style.display = 'flex';
+            document.getElementById('planCard').style.display = 'block';
+            loadPlans(currentMachineId);
+        }
     }
 
     document.getElementById('machineForm').onsubmit = async (e) => {
         e.preventDefault();
         const name = document.getElementById('machName').value;
         const location = document.getElementById('machLoc').value;
-        await fetch('/api/machines', {
+        const res = await fetch('/api/machines', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({name, location})
         });
+        const result = await res.json();
         document.getElementById('machName').value = '';
         document.getElementById('machLoc').value = '';
-        loadMachines();
+        
+        await loadMachines();
+        
+        // ถ้าเพิ่มสำเร็จ ให้เลือกเครื่องที่เพิ่งเพิ่มให้อัตโนมัติ
+        if (result.id) {
+            document.getElementById('machineDropdown').value = result.id;
+            onMachineDropdownChange(result.id);
+        }
     };
 
-    function openEditMachineModal(event, machine) {
-        event.stopPropagation();
-        document.getElementById('editMachId').value = machine.id;
-        document.getElementById('editMachName').value = machine.name;
-        document.getElementById('editMachLoc').value = machine.location;
+    function openEditCurrentMachine() {
+        if (!currentMachineId) return;
+        document.getElementById('editMachId').value = currentMachineId;
+        document.getElementById('editMachName').value = currentMachineName;
+        document.getElementById('editMachLoc').value = currentMachineLocation;
         new bootstrap.Modal(document.getElementById('editMachineModal')).show();
     }
 
-    async function confirmDeleteMachine(event, id, name) {
-        event.stopPropagation();
-        if (confirm(`คุณต้องการลบเครื่องจักร "${name}" และแผนบำรุงรักษาทั้งหมดที่เกี่ยวข้องใช่หรือไม่?`)) {
+    async function deleteCurrentMachine() {
+        if (!currentMachineId) return;
+        if (confirm(`คุณต้องการลบเครื่องจักร "${currentMachineName}" และแผนบำรุงรักษาทั้งหมดที่เกี่ยวข้องใช่หรือไม่?`)) {
             try {
-                const res = await fetch(`/api/machines/${id}`, { method: 'DELETE' });
+                const res = await fetch(`/api/machines/${currentMachineId}`, { method: 'DELETE' });
                 const result = await res.json();
                 
                 if (res.ok || result.success) {
-                    if (currentMachineId == id) {
-                        currentMachineId = null;
-                        document.getElementById('planCard').style.display = 'none';
-                    }
+                    currentMachineId = null;
+                    document.getElementById('planCard').style.display = 'none';
+                    document.getElementById('selectedMachineActionBtns').style.display = 'none';
+                    document.getElementById('machineDropdown').value = "";
                     await loadMachines();
                     loadMasterPlan();
                     loadOverduePlan();
@@ -450,21 +479,10 @@
 
         if (result.success) {
             bootstrap.Modal.getInstance(document.getElementById('editMachineModal')).hide();
-            loadMachines();
-            if (currentMachineId == id) {
-                currentMachineName = name;
-                document.getElementById('selectedMachineTitle').innerText = `เครื่อง: ${name}`;
-            }
+            await loadMachines();
+            document.getElementById('machineDropdown').value = id;
+            onMachineDropdownChange(id);
         }
-    }
-
-    async function selectMachine(id, name) {
-        currentMachineId = id;
-        currentMachineName = name;
-        document.getElementById('planCard').style.display = 'block';
-        document.getElementById('selectedMachineTitle').innerText = `เครื่อง: ${name}`;
-        loadMachines(); 
-        loadPlans(id);
     }
 
     async function loadPlans(machineId) {
