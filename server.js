@@ -1,12 +1,15 @@
 const express = require('express');
 const { Pool } = require('pg');
-const multer = require('multer');
+const dns = require('dns');
 const path = require('path');
+
+// บังคับให้ใช้ IPv4 เพื่อแก้ปัญหาเชื่อมต่อบน Render
+dns.setDefaultResultOrder('ipv4first');
 
 const app = express();
 const port = process.env.PORT || 3000;
 
-// ตั้งค่าการเชื่อมต่อฐานข้อมูล (รองรับทั้ง DATABASE_URL บน Render และเชื่อมต่อทั่วไป)
+// ตั้งค่าการเชื่อมต่อฐานข้อมูล PostgreSQL / Supabase
 const pool = new Pool({
     connectionString: process.env.DATABASE_URL,
     ssl: process.env.DATABASE_URL ? { rejectUnauthorized: false } : false
@@ -14,7 +17,7 @@ const pool = new Pool({
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
-app.use(express.static(path.join(__dirname, 'public'))); // สมมติว่าไฟล์หน้าเว็บอยู่ในโฟลเดอร์ public หรือ root
+app.use(express.static(path.join(__dirname, 'public'))); // โฟลเดอร์เก็บไฟล์หน้าเว็บ
 
 // ฟังก์ชันสร้างตารางและบัญชี Admin อัตโนมัติเมื่อเริ่มระบบ
 async function initDB() {
@@ -52,7 +55,11 @@ app.post('/api/login', async (req, res) => {
     try {
         const result = await pool.query('SELECT * FROM users WHERE username = $1 AND password = $2', [username, password]);
         if (result.rows.length > 0) {
-            res.json({ success: true, message: 'เข้าสู่ระบบสำเร็จ', user: { username: result.rows[0].username, role: result.rows[0].role } });
+            res.json({ 
+                success: true, 
+                message: 'เข้าสู่ระบบสำเร็จ', 
+                user: { username: result.rows[0].username, role: result.rows[0].role } 
+            });
         } else {
             res.status(401).json({ success: false, message: 'ชื่อผู้ใช้งานหรือรหัสผ่านไม่ถูกต้อง' });
         }
