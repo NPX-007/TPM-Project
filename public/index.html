@@ -3,9 +3,11 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ระบบบริหารจัดการแผน TPM</title>
+    <title>ระบบ TPM & CMMS แบบครบวงจร</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <!-- SheetJS สำหรับ Export Excel -->
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
     <style>
         body { background-color: #f4f6f9; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
         .sidebar { min-height: 100vh; background-color: #2c3e50; color: white; }
@@ -22,15 +24,19 @@
         <!-- Sidebar Navigation -->
         <div class="col-md-2 sidebar p-3">
             <h4 class="text-center my-3 text-warning">🛠️ TPM System</h4>
+            <div class="text-center small text-light mb-3" id="currentUserInfo">ผู้ใช้งาน: <span id="lblUser">-</span> (<span id="lblRole">-</span>)</div>
             <hr class="text-secondary">
             <nav class="nav flex-column">
                 <a href="#" class="active" onclick="switchTab('dashboardTab', this)">📊 Dashboard ภาพรวม</a>
                 <a href="#" onclick="switchTab('plansTab', this)">📋 แผน TPM ปัจจุบัน</a>
                 <a href="#" onclick="switchTab('overdueTab', this)">⚠️ งานเลยกำหนด</a>
-                <a href="#" onclick="switchTab('masterPlanTab', this)">📅 แผนงานทั้งหมด (Master)</a>
+                <a href="#" onclick="switchTab('breakdownTab', this)">🚨 แจ้งซ่อม / Breakdown</a>
+                <a href="#" onclick="switchTab('masterPlanTab', this)">📅 Master Plan & Export</a>
                 <a href="#" onclick="switchTab('historyTab', this)">📜 ประวัติงานที่เสร็จสิ้น</a>
                 <a href="#" onclick="switchTab('sparePartsTab', this)">📦 คลังอะไหล่</a>
                 <a href="#" onclick="switchTab('machinesTab', this)">⚙️ จัดการเครื่องจักร</a>
+                <a href="#" id="menuAdminOnly" onclick="switchTab('adminTab', this)" style="display:none;">👑 จัดการสมาชิก (Admin)</a>
+                <a href="#" onclick="switchTab('profileTab', this)">👤 โปรไฟล์ส่วนตัว</a>
             </nav>
         </div>
 
@@ -41,28 +47,34 @@
             <div id="dashboardTab" class="tab-content">
                 <h2 class="mb-4">📊 Dashboard สรุปภาพรวม</h2>
                 <div class="row g-3 mb-4">
-                    <div class="col-md-3">
+                    <div class="col-md-2">
                         <div class="card card-stat border-primary shadow-sm p-3">
                             <small class="text-muted">เครื่องจักรทั้งหมด</small>
                             <h2 id="statMachines" class="text-primary mb-0">0</h2>
                         </div>
                     </div>
-                    <div class="col-md-3">
+                    <div class="col-md-2">
                         <div class="card card-stat border-info shadow-sm p-3">
-                            <small class="text-muted">งานที่รอดำเนินการ</small>
+                            <small class="text-muted">งานรอดำเนินการ</small>
                             <h2 id="statPending" class="text-info mb-0">0</h2>
                         </div>
                     </div>
-                    <div class="col-md-3">
+                    <div class="col-md-2">
                         <div class="card card-stat border-danger shadow-sm p-3">
-                            <small class="text-muted">งานเลยกำหนด (Overdue)</small>
+                            <small class="text-muted">งานเลยกำหนด</small>
                             <h2 id="statOverdue" class="text-danger mb-0">0</h2>
                         </div>
                     </div>
                     <div class="col-md-3">
                         <div class="card card-stat border-warning shadow-sm p-3">
-                            <small class="text-muted">อะไหล่ใกล้หมด (<= 2 ชิ้น)</small>
-                            <h2 id="statLowStock" class="text-warning mb-0">0</h2>
+                            <small class="text-muted">แจ้งซ่อมรอดำเนินการ</small>
+                            <h2 id="statBreakdowns" class="text-warning mb-0">0</h2>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="card card-stat border-secondary shadow-sm p-3">
+                            <small class="text-muted">อะไหล่ใกล้หมด (<=2)</small>
+                            <h2 id="statLowStock" class="text-secondary mb-0">0</h2>
                         </div>
                     </div>
                 </div>
@@ -122,12 +134,40 @@
                 </div>
             </div>
 
-            <!-- Tab 4: Master Plan -->
-            <div id="masterPlanTab" class="tab-content" style="display: none;">
-                <h2 class="mb-3">📅 แผนงานบำรุงรักษาทั้งหมด (Master Plan)</h2>
+            <!-- Tab 4: Breakdown / แจ้งซ่อม -->
+            <div id="breakdownTab" class="tab-content" style="display: none;">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <h2>🚨 รายการแจ้งซ่อมเครื่องจักร (Breakdown)</h2>
+                    <button class="btn btn-danger" onclick="openAddBreakdownModal()">+ รายงานแจ้งซ่อม</button>
+                </div>
                 <div class="card shadow-sm">
                     <div class="card-body p-0">
-                        <table class="table table-bordered table-v-align mb-0 text-center">
+                        <table class="table table-hover table-v-align mb-0 text-center">
+                            <thead class="table-warning">
+                                <tr>
+                                    <th>เวลาแจ้ง</th>
+                                    <th>เครื่องจักร</th>
+                                    <th>อาการเสีย/ปัญหา</th>
+                                    <th>ผู้แจ้ง</th>
+                                    <th>สถานะ</th>
+                                    <th>เปลี่ยนสถานะ</th>
+                                </tr>
+                            </thead>
+                            <tbody id="breakdownTableBody"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Tab 5: Master Plan & Export -->
+            <div id="masterPlanTab" class="tab-content" style="display: none;">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <h2>📅 แผนงานบำรุงรักษาทั้งหมด (Master Plan)</h2>
+                    <button class="btn btn-success" onclick="exportMasterPlanExcel()">📊 Export Excel</button>
+                </div>
+                <div class="card shadow-sm">
+                    <div class="card-body p-0">
+                        <table id="masterPlanTable" class="table table-bordered table-v-align mb-0 text-center">
                             <thead class="table-secondary">
                                 <tr>
                                     <th>ID</th>
@@ -144,7 +184,7 @@
                 </div>
             </div>
 
-            <!-- Tab 5: ประวัติงานเสร็จสิ้น -->
+            <!-- Tab 6: ประวัติงานเสร็จสิ้น -->
             <div id="historyTab" class="tab-content" style="display: none;">
                 <h2 class="mb-3">📜 ประวัติการบำรุงรักษาที่เสร็จสิ้น</h2>
                 <div class="card shadow-sm">
@@ -167,7 +207,7 @@
                 </div>
             </div>
 
-            <!-- Tab 6: คลังอะไหล่ -->
+            <!-- Tab 7: คลังอะไหล่ -->
             <div id="sparePartsTab" class="tab-content" style="display: none;">
                 <div class="d-flex justify-content-between align-items-center mb-3">
                     <h2>📦 จำนวนอะไหล่คงคลัง</h2>
@@ -190,7 +230,7 @@
                 </div>
             </div>
 
-            <!-- Tab 7: จัดการเครื่องจักร -->
+            <!-- Tab 8: จัดการเครื่องจักร -->
             <div id="machinesTab" class="tab-content" style="display: none;">
                 <div class="d-flex justify-content-between align-items-center mb-3">
                     <h2>⚙️ จัดการรายการเครื่องจักร</h2>
@@ -213,11 +253,52 @@
                 </div>
             </div>
 
+            <!-- Tab 9: จัดการสมาชิก (Admin Only) -->
+            <div id="adminTab" class="tab-content" style="display: none;">
+                <h2 class="mb-3">👑 ระบบจัดการผู้ใช้งาน (สำหรับ Admin)</h2>
+                <div class="card shadow-sm col-md-8">
+                    <div class="card-body p-0">
+                        <table class="table table-bordered table-v-align mb-0 text-center">
+                            <thead class="table-dark">
+                                <tr>
+                                    <th>ID</th>
+                                    <th>Username</th>
+                                    <th>สิทธิ์ (Role)</th>
+                                    <th>วันที่สร้าง</th>
+                                    <th>จัดการ</th>
+                                </tr>
+                            </thead>
+                            <tbody id="usersTableBody"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Tab 10: โปรไฟล์ส่วนตัว -->
+            <div id="profileTab" class="tab-content" style="display: none;">
+                <h2 class="mb-3">👤 แก้ไขข้อมูลส่วนตัว</h2>
+                <div class="card shadow-sm col-md-6">
+                    <div class="card-body">
+                        <form id="profileForm">
+                            <div class="mb-3">
+                                <label class="form-label">Username</label>
+                                <input type="text" id="profileUsername" class="form-control" required>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">เปลี่ยนรหัสผ่านใหม่ (เว้นว่างหากไม่เปลี่ยน)</label>
+                                <input type="password" id="profilePassword" class="form-control">
+                            </div>
+                            <button type="submit" class="btn btn-primary">บันทึกการแก้ไข</button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+
         </div>
     </div>
 </div>
 
-<!-- Modal: เพิ่ม/แก้ไข แผน TPM -->
+<!-- Modal: เพิ่ม/แก้ไข แผนงาน -->
 <div class="modal fade" id="planModal" tabindex="-1">
     <div class="modal-dialog">
         <div class="modal-content">
@@ -251,7 +332,7 @@
                         <input type="date" id="planNextDueDate" class="form-control" required>
                     </div>
                     <div class="mb-3">
-                        <label class="form-label">URL รูปภาพ (ถ้ามี)</label>
+                        <label class="form-label">URL รูปภาพ</label>
                         <input type="text" id="planImageUrl" class="form-control" placeholder="https://...">
                     </div>
                     <div class="mb-3">
@@ -259,6 +340,35 @@
                         <textarea id="planNotes" class="form-control" rows="2"></textarea>
                     </div>
                     <button type="submit" class="btn btn-primary w-100">บันทึกข้อมูล</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal: แจ้งซ่อม -->
+<div class="modal fade" id="breakdownModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">รายงานแจ้งซ่อมเครื่องจักร</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="breakdownForm">
+                    <div class="mb-3">
+                        <label class="form-label">เครื่องจักร</label>
+                        <select id="breakdownMachineId" class="form-select" required></select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">รายละเอียดปัญหา/อาการเสีย</label>
+                        <textarea id="breakdownIssue" class="form-control" rows="3" required></textarea>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">ผู้แจ้งซ่อม</label>
+                        <input type="text" id="breakdownReportedBy" class="form-control" required>
+                    </div>
+                    <button type="submit" class="btn btn-danger w-100">ส่งรายงานแจ้งซ่อม</button>
                 </form>
             </div>
         </div>
@@ -290,7 +400,7 @@
     </div>
 </div>
 
-<!-- Modal: เพิ่ม/แก้ไข อะไหล่ -->
+<!-- Modal: อะไหล่ -->
 <div class="modal fade" id="sparePartModal" tabindex="-1">
     <div class="modal-dialog">
         <div class="modal-content">
@@ -317,22 +427,28 @@
 </div>
 
 <script>
+    let currentUser = { id: 1, username: 'admin', role: 'admin' }; // Mock หรือดึงจาก Session
     let currentMachineId = '';
-    let planModal, machineModal, sparePartModal;
+    let planModal, machineModal, sparePartModal, breakdownModal;
 
     document.addEventListener('DOMContentLoaded', () => {
         planModal = new bootstrap.Modal(document.getElementById('planModal'));
         machineModal = new bootstrap.Modal(document.getElementById('machineModal'));
         sparePartModal = new bootstrap.Modal(document.getElementById('sparePartModal'));
+        breakdownModal = new bootstrap.Modal(document.getElementById('breakdownModal'));
 
-        loadDashboard();
-        loadMachines();
-        loadPlans();
-        loadOverduePlan();
-        loadMasterPlan();
-        loadHistoryPlan();
-        loadSpareParts();
+        initUser();
+        refreshAllData();
     });
+
+    function initUser() {
+        document.getElementById('lblUser').innerText = currentUser.username;
+        document.getElementById('lblRole').innerText = currentUser.role;
+        document.getElementById('profileUsername').value = currentUser.username;
+        if (currentUser.role === 'admin') {
+            document.getElementById('menuAdminOnly').style.display = 'block';
+        }
+    }
 
     function switchTab(tabId, element) {
         document.querySelectorAll('.tab-content').forEach(el => el.style.display = 'none');
@@ -341,12 +457,25 @@
         element.classList.add('active');
     }
 
+    function refreshAllData() {
+        loadDashboard();
+        loadMachines();
+        loadPlans(currentMachineId);
+        loadOverduePlan();
+        loadBreakdowns();
+        loadMasterPlan();
+        loadHistoryPlan();
+        loadSpareParts();
+        if (currentUser.role === 'admin') loadUsers();
+    }
+
     async function loadDashboard() {
         const res = await fetch('/api/dashboard');
         const data = await res.json();
         document.getElementById('statMachines').innerText = data.totalMachines;
         document.getElementById('statPending').innerText = data.pendingPlans;
         document.getElementById('statOverdue').innerText = data.overduePlans;
+        document.getElementById('statBreakdowns').innerText = data.activeBreakdowns;
         document.getElementById('statLowStock').innerText = data.lowStockParts;
     }
 
@@ -356,15 +485,18 @@
         
         const selectFilter = document.getElementById('machineFilter');
         const selectPlan = document.getElementById('planMachineId');
+        const selectBreakdown = document.getElementById('breakdownMachineId');
         const tbody = document.getElementById('machinesTableBody');
 
         selectFilter.innerHTML = '<option value="">-- แสดงเครื่องจักรทั้งหมด --</option>';
         selectPlan.innerHTML = '';
+        selectBreakdown.innerHTML = '';
         tbody.innerHTML = '';
 
         machines.forEach(m => {
             selectFilter.innerHTML += `<option value="${m.id}">${m.name}</option>`;
             selectPlan.innerHTML += `<option value="${m.id}">${m.name}</option>`;
+            selectBreakdown.innerHTML += `<option value="${m.id}">${m.name}</option>`;
             tbody.innerHTML += `
                 <tr>
                     <td>${m.id}</td>
@@ -428,7 +560,7 @@
 
         if (result.success) {
             if (result.isReset) {
-                alert('✅ บันทึกลงประวัติงานเสร็จ ตัดสต็อกอะไหล่ และคำนวณตั้งรอบถัดไปเรียบร้อยแล้ว');
+                alert('✅ บันทึกลงประวัติ ตัดสต็อกอะไหล่ และรีเซ็ตบวกรอบวันถัดไปเรียบร้อยแล้ว');
             }
             refreshAllData();
         } else {
@@ -458,6 +590,42 @@
         });
     }
 
+    async function loadBreakdowns() {
+        const res = await fetch('/api/breakdowns');
+        const items = await res.json();
+        const tbody = document.getElementById('breakdownTableBody');
+        tbody.innerHTML = '';
+
+        items.forEach(b => {
+            const dateStr = new Date(b.created_at).toLocaleString('th-TH');
+            tbody.innerHTML += `
+                <tr>
+                    <td>${dateStr}</td>
+                    <td><strong>${b.machine_name}</strong></td>
+                    <td class="text-start">${b.issue_description}</td>
+                    <td>${b.reported_by}</td>
+                    <td><span class="badge bg-warning text-dark">${b.status}</span></td>
+                    <td>
+                        <select class="form-select form-select-sm" onchange="updateBreakdownStatus(${b.id}, this.value)">
+                            <option value="" disabled selected>เปลี่ยนสถานะ</option>
+                            <option value="กำลังซ่อม">กำลังซ่อม</option>
+                            <option value="ซ่อมเสร็จแล้ว">✅ ซ่อมเสร็จแล้ว</option>
+                        </select>
+                    </td>
+                </tr>
+            `;
+        });
+    }
+
+    async function updateBreakdownStatus(id, status) {
+        await fetch(`/api/breakdowns/${id}/status`, {
+            method: 'PUT',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ status })
+        });
+        refreshAllData();
+    }
+
     async function loadMasterPlan() {
         const res = await fetch('/api/plans');
         const plans = await res.json();
@@ -477,6 +645,12 @@
                 </tr>
             `;
         });
+    }
+
+    function exportMasterPlanExcel() {
+        const table = document.getElementById('masterPlanTable');
+        const wb = XLSX.utils.table_to_book(table, { sheet: "Master Plan" });
+        XLSX.writeFile(wb, "TPM_Master_Plan.xlsx");
     }
 
     async function loadHistoryPlan() {
@@ -526,16 +700,35 @@
         });
     }
 
-    function refreshAllData() {
-        loadDashboard();
-        loadPlans(currentMachineId);
-        loadOverduePlan();
-        loadMasterPlan();
-        loadHistoryPlan();
-        loadSpareParts();
+    async function loadUsers() {
+        const res = await fetch('/api/users');
+        const users = await res.json();
+        const tbody = document.getElementById('usersTableBody');
+        tbody.innerHTML = '';
+
+        users.forEach(u => {
+            tbody.innerHTML += `
+                <tr>
+                    <td>${u.id}</td>
+                    <td><strong>${u.username}</strong></td>
+                    <td><span class="badge bg-primary">${u.role}</span></td>
+                    <td>${new Date(u.created_at).toLocaleDateString('th-TH')}</td>
+                    <td>
+                        ${u.role !== 'admin' ? `<button class="btn btn-sm btn-danger" onclick="deleteUser(${u.id})">ลบสมาชิก</button>` : '-'}
+                    </td>
+                </tr>
+            `;
+        });
     }
 
-    // Modal Actions & Submits
+    async function deleteUser(id) {
+        if (confirm('ยืนยันลบสมาชิกท่านนี้?')) {
+            await fetch(`/api/users/${id}`, { method: 'DELETE' });
+            loadUsers();
+        }
+    }
+
+    // Modal & Forms Actions
     function openAddPlanModal() {
         document.getElementById('planForm').reset();
         document.getElementById('planId').value = '';
@@ -589,6 +782,26 @@
         }
     }
 
+    function openAddBreakdownModal() {
+        document.getElementById('breakdownForm').reset();
+        breakdownModal.show();
+    }
+
+    document.getElementById('breakdownForm').onsubmit = async (e) => {
+        e.preventDefault();
+        await fetch('/api/breakdowns', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                machine_id: document.getElementById('breakdownMachineId').value,
+                issue_description: document.getElementById('breakdownIssue').value,
+                reported_by: document.getElementById('breakdownReportedBy').value
+            })
+        });
+        breakdownModal.hide();
+        refreshAllData();
+    };
+
     function openAddMachineModal() {
         document.getElementById('machineForm').reset();
         machineModal.show();
@@ -605,14 +818,12 @@
             })
         });
         machineModal.hide();
-        loadMachines();
-        loadDashboard();
+        refreshAllData();
     };
 
     async function deleteMachine(id) {
         if (confirm('ยืนยันลบเครื่องจักรนี้? (แผนงานที่เกี่ยวข้องจะถูกลบด้วย)')) {
             await fetch(`/api/machines/${id}`, { method: 'DELETE' });
-            loadMachines();
             refreshAllData();
         }
     }
@@ -650,8 +861,24 @@
         });
 
         sparePartModal.hide();
-        loadSpareParts();
-        loadDashboard();
+        refreshAllData();
+    };
+
+    document.getElementById('profileForm').onsubmit = async (e) => {
+        e.preventDefault();
+        const payload = {
+            id: currentUser.id,
+            username: document.getElementById('profileUsername').value,
+            password: document.getElementById('profilePassword').value
+        };
+        await fetch('/api/users/profile', {
+            method: 'PUT',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(payload)
+        });
+        alert('อัปเดตข้อมูลส่วนตัวเรียบร้อยแล้ว');
+        currentUser.username = payload.username;
+        initUser();
     };
 </script>
 </body>
