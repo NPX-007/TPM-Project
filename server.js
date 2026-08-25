@@ -312,9 +312,10 @@ app.post('/api/plans', upload.single('image'), async (req, res) => {
     }
 });
 
+// อัปเดตสถานะงานและบันทึกวันดำเนินการจริง
 app.patch('/api/plans/:id/status', async (req, res) => {
     try {
-        const { status } = req.body;
+        const { status, actual_date } = req.body;
         const id = parseInt(req.params.id);
 
         if (status === 'เสร็จสิ้น') {
@@ -323,9 +324,12 @@ app.patch('/api/plans/:id/status', async (req, res) => {
             if (plan && plan.spare_part_id) {
                 await db.query('UPDATE spare_parts SET stock_qty = GREATEST(0, stock_qty - 1) WHERE id = $1', [plan.spare_part_id]);
             }
+            const actualDate = actual_date || new Date().toISOString().split('T')[0];
+            await db.query('UPDATE plans SET status = $1, actual_date = $2 WHERE id = $3', [status, actualDate, id]);
+        } else {
+            await db.query('UPDATE plans SET status = $1 WHERE id = $2', [status, id]);
         }
 
-        await db.query('UPDATE plans SET status = $1 WHERE id = $2', [status, id]);
         res.json({ success: true });
     } catch (err) {
         console.error('Update Plan Status Error:', err);

@@ -265,7 +265,16 @@
                 <div class="table-responsive">
                     <table class="table table-bordered text-center">
                         <thead class="table-success">
-                            <tr><th>กำหนดเดิม</th><th>เครื่องจักร</th><th>ชื่องาน</th><th>รอบซ้ำ</th><th>อะไหล่ที่ใช้</th><th>หมายเหตุ</th><th>รูป</th></tr>
+                            <tr>
+                                <th>กำหนดเดิม</th>
+                                <th>วันเสร็จจริง</th>
+                                <th>เครื่องจักร</th>
+                                <th>ชื่องาน</th>
+                                <th>รอบซ้ำ</th>
+                                <th>อะไหล่ที่ใช้</th>
+                                <th>หมายเหตุ</th>
+                                <th>รูป</th>
+                            </tr>
                         </thead>
                         <tbody id="historyTableBody"></tbody>
                     </table>
@@ -665,9 +674,11 @@
         tbody.innerHTML = '';
 
         plans.forEach(p => {
+            const actualDate = p.actual_date ? p.actual_date.split('T')[0] : '-';
             tbody.innerHTML += `
                 <tr>
                     <td>${p.next_due_date ? p.next_due_date.split('T')[0] : ''}</td>
+                    <td><span class="badge bg-success">${actualDate}</span></td>
                     <td><strong>${p.machine_name}</strong></td>
                     <td class="text-start">${p.task_name}</td>
                     <td><small class="badge bg-info text-dark">รอบ ${p.interval_months} ด.</small></td>
@@ -893,15 +904,28 @@
     };
 
     async function updatePlanStatus(id, status) {
+        let actual_date = null;
+        if (status === 'เสร็จสิ้น') {
+            const today = new Date().toISOString().split('T')[0];
+            actual_date = prompt('ระบุวันดำเนินการตามจริง (YYYY-MM-DD):', today);
+            if (actual_date === null) {
+                if (currentMachineId) loadPlans(currentMachineId);
+                loadMasterPlan();
+                return;
+            }
+            if (!actual_date.trim()) actual_date = today;
+        }
+
         await fetch(`/api/plans/${id}/status`, {
             method: 'PATCH',
             headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({status})
+            body: JSON.stringify({status, actual_date})
         });
         if (currentMachineId) loadPlans(currentMachineId);
         loadDashboard();
         loadSpareParts();
         loadMasterPlan();
+        loadHistoryPlan();
     }
 
     async function deletePlan(id) {
