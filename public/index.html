@@ -61,7 +61,7 @@
         <h2 class="text-primary fw-bold m-0">⚙️ ระบบจัดการ TPM & CMMS โรงงาน</h2>
         <div class="d-flex align-items-center gap-2">
             <span id="userBadge" class="badge bg-secondary fs-6"></span>
-            <button class="btn btn-outline-secondary btn-sm" data-bs-toggle="modal" data-bs-target="#profileModal">🔑 เปลี่ยนรหัสผ่าน</button>
+            <button class="btn btn-outline-secondary btn-sm" data-bs-toggle="modal" data-bs-target="#profileModal" onclick="openProfileModal()">⚙️ แก้ไขข้อมูลส่วนตัว</button>
             <button class="btn btn-outline-danger btn-sm" onclick="logout()">ออกจากระบบ</button>
         </div>
     </div>
@@ -261,13 +261,32 @@
     </div>
 </div>
 
-<!-- Modal เปลี่ยนรหัสผ่าน -->
+<!-- Modal แก้ไขข้อมูลส่วนตัว -->
 <div class="modal fade" id="profileModal" tabindex="-1">
     <div class="modal-dialog">
         <div class="modal-content">
-            <div class="modal-header"><h5 class="modal-title">🔑 เปลี่ยนรหัสผ่าน</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
-            <div class="modal-body"><input type="password" id="newProfilePass" class="form-control" placeholder="กรอกรหัสผ่านใหม่" required></div>
-            <div class="modal-footer"><button type="button" class="btn btn-primary" onclick="changeMyPassword()">บันทึกรหัสผ่านใหม่</button></div>
+            <div class="modal-header">
+                <h5 class="modal-title">⚙️ แก้ไขข้อมูลส่วนตัว</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <label class="form-label small fw-bold">ชื่อผู้ใช้งาน (Username)</label>
+                    <input type="text" id="editProfileUser" class="form-control" required>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label small fw-bold text-danger">รหัสผ่านเดิม (จำเป็นต้องใส่เพื่อยืนยัน)</label>
+                    <input type="password" id="oldProfilePass" class="form-control" placeholder="กรอกรหัสผ่านปัจจุบัน" required>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label small fw-bold text-primary">รหัสผ่านใหม่ (เว้นว่างไว้ถ้าไม่ต้องการเปลี่ยน)</label>
+                    <input type="password" id="newProfilePass" class="form-control" placeholder="กรอกรหัสผ่านใหม่">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">ยกเลิก</button>
+                <button type="button" class="btn btn-primary" onclick="updateMyProfile()">บันทึกการเปลี่ยนแปลง</button>
+            </div>
         </div>
     </div>
 </div>
@@ -345,18 +364,46 @@
         location.reload();
     }
 
-    async function changeMyPassword() {
+    function openProfileModal() {
+        if (currentUser) {
+            document.getElementById('editProfileUser').value = currentUser.username;
+            document.getElementById('oldProfilePass').value = '';
+            document.getElementById('newProfilePass').value = '';
+        }
+    }
+
+    async function updateMyProfile() {
+        const newUsername = document.getElementById('editProfileUser').value.trim();
+        const oldPassword = document.getElementById('oldProfilePass').value;
         const newPassword = document.getElementById('newProfilePass').value;
-        if (!newPassword) return alert('กรุณากรอกรหัสผ่านใหม่');
+
+        if (!newUsername) return alert('กรุณากรอกชื่อผู้ใช้งาน');
+        if (!oldPassword) return alert('กรุณากรอกรหัสผ่านเดิมเพื่อยืนยัน');
+
         const res = await fetch('/api/users/profile', {
             method: 'PATCH',
             headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({ userId: currentUser.id, newPassword })
+            body: JSON.stringify({
+                userId: currentUser.id,
+                oldPassword: oldPassword,
+                newUsername: newUsername,
+                newPassword: newPassword
+            })
         });
+
         const result = await res.json();
         if (result.success) {
-            alert('เปลี่ยนรหัสผ่านเรียบร้อยแล้ว');
-            bootstrap.Modal.getInstance(document.getElementById('profileModal')).hide();
+            alert(result.message);
+            // อัปเดตข้อมูลเซสชันใหม่ในเบราว์เซอร์
+            currentUser = result.user;
+            localStorage.setItem('user', JSON.stringify(currentUser));
+            document.getElementById('userBadge').innerText = `${currentUser.username} (${currentUser.role.toUpperCase()})`;
+            
+            const modalEl = document.getElementById('profileModal');
+            const modalInstance = bootstrap.Modal.getInstance(modalEl);
+            if (modalInstance) modalInstance.hide();
+        } else {
+            alert(result.message);
         }
     }
 

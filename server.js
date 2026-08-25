@@ -127,11 +127,35 @@ app.patch('/api/users/:id/role', async (req, res) => {
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// อัปเดตข้อมูลส่วนตัว (ต้องยืนยันรหัสเดิม + เปลี่ยนชื่อ/รหัสผ่านใหม่)
 app.patch('/api/users/profile', async (req, res) => {
+    const { userId, oldPassword, newUsername, newPassword } = req.body;
     try {
-        await pool.query('UPDATE users SET password = $1 WHERE id = $2', [req.body.newPassword, req.body.userId]);
-        res.json({ success: true, message: 'อัปเดตรหัสผ่านสำเร็จ' });
-    } catch (err) { res.status(500).json({ error: err.message }); }
+        // 1. ตรวจสอบรหัสผ่านเดิม
+        const userCheck = await pool.query('SELECT * FROM users WHERE id = $1 AND password = $2', [userId, oldPassword]);
+        if (userCheck.rows.length === 0) {
+            return res.status(400).json({ success: false, message: 'รหัสผ่านเดิมไม่ถูกต้อง' });
+        }
+
+        // 2. ตรวจสอบว่าชื่อใหม่ซ้ำกับคนอื่นหรือไม่
+        const nameCheck = await pool.query('SELECT * FROM users WHERE username = $1 AND id != $2', [newUsername, userId]);
+        if (nameCheck.rows.length > 0) {
+            return res.status(400).json({ success: false, message: 'ชื่อผู้ใช้นี้ถูกใช้งานแล้ว' });
+        }
+
+        // 3. กำหนดรหัสผ่านใหม่ (หากเว้นว่างไว้ให้ใช้รหัสเดิม)
+        const finalPassword = (newPassword && newPassword.trim() !== '') ? newPassword : oldPassword;
+
+        // 4. บันทึกข้อมูล
+        const updateRes = await pool.query(
+            'UPDATE users SET username = $1, password = $2 WHERE id = $3 RETURNING id, username, role',
+            [newUsername, finalPassword, userId]
+        );
+
+        res.json({ success: true, message: 'อัปเดตข้อมูลส่วนตัวเรียบร้อยแล้ว', user: updateRes.rows[0] });
+    } catch (err) {
+        res.status(500).json({ success: false, message: err.message });
+    }
 });
 
 // --- API TPM & CMMS ---
@@ -180,7 +204,6 @@ app.get('/api/plans/:machineId', async (req, res) => {
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// ดึง Master Plan ทั้งหมด
 app.get('/api/plans-master', async (req, res) => {
     try {
         const result = await pool.query(`
@@ -193,7 +216,6 @@ app.get('/api/plans-master', async (req, res) => {
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// ดึงงานเลยกำหนด (Overdue)
 app.get('/api/plans-overdue', async (req, res) => {
     try {
         const result = await pool.query(`
@@ -207,7 +229,6 @@ app.get('/api/plans-overdue', async (req, res) => {
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// ดึงประวัติงานที่ทำเสร็จแล้ว (History)
 app.get('/api/plans-history', async (req, res) => {
     try {
         const result = await pool.query(`
