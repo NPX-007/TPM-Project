@@ -3,16 +3,23 @@ const mysql = require('mysql2/promise');
 const multer = require('multer');
 const path = require('path');
 const cors = require('cors');
+const fs = require('fs');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+
+// ตรวจสอบและสร้างโฟลเดอร์ uploads อัตโนมัติถ้ายังไม่มีในระบบ
+const uploadDir = path.join(__dirname, 'uploads');
+if (!fs.existsSync(uploadDir)) {
+    fs.mkdirSync(uploadDir, { recursive: true });
+}
 
 // ตั้งค่า Middleware
 app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static('public'));
-app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+app.use('/uploads', express.static(uploadDir));
 
 // ตั้งค่า File Upload ด้วย Multer
 const storage = multer.diskStorage({
@@ -21,12 +28,13 @@ const storage = multer.diskStorage({
 });
 const upload = multer({ storage });
 
-// เชื่อมต่อฐานข้อมูล MySQL
+// เชื่อมต่อฐานข้อมูล MySQL (รองรับทั้ง Environment Variables บน Cloud และ Localhost)
 const db = mysql.createPool({
-    host: 'localhost',
-    user: 'root',
-    password: '', // กรอก Password ของ MySQL ที่ใช้อยู่
-    database: 'tpm_cmms_db',
+    host: process.env.DB_HOST || 'localhost',
+    user: process.env.DB_USER || 'root',
+    password: process.env.DB_PASSWORD || '',
+    database: process.env.DB_NAME || 'tpm_cmms_db',
+    port: process.env.DB_PORT ? parseInt(process.env.DB_PORT) : 3306,
     waitForConnections: true,
     connectionLimit: 10,
     queueLimit: 0
@@ -366,5 +374,5 @@ app.delete('/api/spare-parts/:id', async (req, res) => {
 
 // Start Server
 app.listen(PORT, () => {
-    console.log(`Server is running on http://localhost:${PORT}`);
+    console.log(`Server is running on port ${PORT}`);
 });
