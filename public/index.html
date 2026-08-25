@@ -275,11 +275,18 @@
         <!-- แท็บจัดการสมาชิก (Admin Only) -->
         <div class="tab-pane fade admin-only" id="userManageSection" role="tabpanel" style="display:none;">
             <div class="card p-4">
-                <h4 class="text-danger mb-3">👥 จัดการสิทธิ์การใช้งานของสมาชิก</h4>
+                <h4 class="text-danger mb-3">👥 จัดการสิทธิ์และบัญชีสมาชิก</h4>
                 <div class="table-responsive">
                     <table class="table table-bordered text-center">
                         <thead class="table-dark">
-                            <tr><th>ID</th><th>ชื่อผู้ใช้งาน</th><th>สิทธิ์ปัจจุบัน</th><th>เปลี่ยนสิทธิ์</th></tr>
+                            <tr>
+                                <th>ID</th>
+                                <th>ชื่อผู้ใช้งาน</th>
+                                <th>รหัสผ่าน</th>
+                                <th>สิทธิ์ปัจจุบัน</th>
+                                <th>เปลี่ยนสิทธิ์</th>
+                                <th>จัดการ</th>
+                            </tr>
                         </thead>
                         <tbody id="userTableBody"></tbody>
                     </table>
@@ -499,13 +506,11 @@
         });
     }
 
-    // ฟังก์ชั่นเลือกทั้งหมด / ล้างตัวเลือก
     function toggleSelectAllMaster(checked) {
         document.querySelectorAll('.master-cb').forEach(cb => cb.checked = checked);
         document.getElementById('selectAllHeaderCb').checked = checked;
     }
 
-    // ฟังก์ชั่นเลือกตามช่วงเวลา (1, 3, 6, 12 เดือน)
     function selectMasterByTimeframe(months) {
         toggleSelectAllMaster(false);
         const today = new Date();
@@ -524,7 +529,6 @@
         });
     }
 
-    // ดาวน์โหลด Excel (เลือกเฉพาะรายการที่ติ๊ก)
     function downloadMasterPlanExcel() {
         const checkedRows = document.querySelectorAll('.master-cb:checked');
         if (checkedRows.length === 0) {
@@ -532,20 +536,19 @@
         }
 
         const data = [];
-        // หัวตาราง Excel
         data.push(["วันที่กำหนด", "เครื่องจักร", "ชื่องาน", "รอบซ้ำ (เดือน)", "อะไหล่ที่ใช้", "สถานะ", "หมายเหตุ"]);
 
         checkedRows.forEach(cb => {
             const tr = cb.closest('tr');
             const cols = tr.children;
             data.push([
-                cols[2].innerText, // วันที่กำหนด
-                cols[3].innerText, // เครื่องจักร
-                cols[4].innerText, // ชื่องาน
-                cols[5].innerText, // รอบซ้ำ
-                cols[6].innerText, // อะไหล่
-                cols[7].innerText, // สถานะ
-                cols[8].innerText  // หมายเหตุ
+                cols[2].innerText,
+                cols[3].innerText,
+                cols[4].innerText,
+                cols[5].innerText,
+                cols[6].innerText,
+                cols[7].innerText,
+                cols[8].innerText
             ]);
         });
 
@@ -555,7 +558,6 @@
         XLSX.writeFile(wb, `Master_Plan_TPM_${new Date().toISOString().split('T')[0]}.xlsx`);
     }
 
-    // ดาวน์โหลด PDF (ปรับแต่งสัดส่วน, จัดการ Alignment และเพิ่มเส้นขอบชัดเจน)
     function downloadMasterPlanPDF() {
         const checkedRows = document.querySelectorAll('.master-cb:checked');
         if (checkedRows.length === 0) {
@@ -664,7 +666,7 @@
         });
     }
 
-    // --- ส่วนการจัดการอื่นๆ ---
+    // --- ส่วนการจัดการสมาชิกและสิทธิ์ (Admin Only) ---
 
     async function loadUserManagement() {
         if (currentUser.role !== 'admin') return;
@@ -672,11 +674,16 @@
         const users = await res.json();
         const tbody = document.getElementById('userTableBody');
         tbody.innerHTML = '';
+        
         users.forEach(u => {
             tbody.innerHTML += `
                 <tr>
                     <td>${u.id}</td>
                     <td class="fw-bold">${u.username}</td>
+                    <td>
+                        <span id="pwdDisplay-${u.id}" class="font-monospace">••••••••</span>
+                        <button class="btn btn-sm btn-link p-0 ms-1 text-decoration-none" title="ดู/ซ่อนรหัสผ่าน" onclick="togglePasswordVisibility(${u.id}, '${u.password || ''}')">👁️</button>
+                    </td>
                     <td><span class="badge ${u.role === 'admin' ? 'bg-danger' : u.role === 'member' ? 'bg-success' : 'bg-secondary'}">${u.role}</span></td>
                     <td>
                         <select class="form-select form-select-sm w-auto mx-auto" onchange="changeUserRole(${u.id}, this.value)">
@@ -685,9 +692,39 @@
                             <option value="admin" ${u.role === 'admin' ? 'selected' : ''}>Admin (สิทธิ์สูงสุด)</option>
                         </select>
                     </td>
+                    <td>
+                        ${u.id !== currentUser.id ? `<button class="btn btn-sm btn-outline-danger fw-bold" onclick="deleteUserAccount(${u.id}, '${u.username}')">🗑️ ลบบัญชี</button>` : '<span class="text-muted small">บัญชีปัจจุบัน</span>'}
+                    </td>
                 </tr>
             `;
         });
+    }
+
+    function togglePasswordVisibility(userId, plainPassword) {
+        const el = document.getElementById(`pwdDisplay-${userId}`);
+        if (!el) return;
+        if (el.innerText === '••••••••') {
+            el.innerText = plainPassword || '(ไม่มีข้อมูล)';
+        } else {
+            el.innerText = '••••••••';
+        }
+    }
+
+    async function deleteUserAccount(userId, username) {
+        if (userId === currentUser.id) {
+            return alert('ไม่สามารถลบบัญชีผู้ใช้ที่กำลังเข้าสู่ระบบอยู่ได้');
+        }
+
+        if (confirm(`คุณแน่ใจหรือไม่ว่าต้องการลบบัญชีผู้ใช้ "${username}" ออกจากระบบ?`)) {
+            const res = await fetch(`/api/users/${userId}`, { method: 'DELETE' });
+            const result = await res.json();
+            if (res.ok || result.success) {
+                alert(`ลบบัญชีผู้ใช้ "${username}" เรียบร้อยแล้ว`);
+                loadUserManagement();
+            } else {
+                alert(result.message || 'เกิดข้อผิดพลาดในการลบบัญชีผู้ใช้');
+            }
+        }
     }
 
     async function changeUserRole(userId, newRole) {
@@ -699,6 +736,8 @@
         alert('อัปเดตสิทธิ์เรียบร้อยแล้ว');
         loadUserManagement();
     }
+
+    // --- ส่วนการจัดการระบบทั่วไป ---
 
     async function loadDashboard() {
         const res = await fetch('/api/dashboard-summary');
