@@ -34,6 +34,21 @@ const db = new Pool({
     ssl: process.env.DATABASE_URL ? { rejectUnauthorized: false } : false
 });
 
+// ตรวจสอบและสร้างตาราง plan_history อัตโนมัติ
+db.query(`
+    CREATE TABLE IF NOT EXISTS plan_history (
+        id SERIAL PRIMARY KEY,
+        machine_id INT,
+        task_name VARCHAR(250),
+        next_due_date DATE,
+        interval_months INT,
+        spare_part_id INT,
+        notes TEXT,
+        image_url TEXT,
+        completed_date DATE DEFAULT CURRENT_DATE
+    );
+`).catch(err => console.error('Init plan_history table error:', err));
+
 // ====================================================
 // 1. AUTHENTICATION & USER MANAGEMENT API
 // ====================================================
@@ -252,15 +267,15 @@ app.get('/api/plans-overdue', async (req, res) => {
     }
 });
 
+// ดึงข้อมูลประวัติงานที่เสร็จสิ้น (จากตาราง plan_history)
 app.get('/api/plans-history', async (req, res) => {
     try {
         const { rows } = await db.query(`
-            SELECT p.*, m.name as machine_name, s.part_name as spare_part_name 
-            FROM plans p
-            JOIN machines m ON p.machine_id = m.id
-            LEFT JOIN spare_parts s ON p.spare_part_id = s.id
-            WHERE p.status = 'เสร็จสิ้น'
-            ORDER BY p.next_due_date DESC
+            SELECT h.*, m.name as machine_name, s.part_name as spare_part_name 
+            FROM plan_history h
+            LEFT JOIN machines m ON h.machine_id = m.id
+            LEFT JOIN spare_parts s ON h.spare_part_id = s.id
+            ORDER BY h.completed_date DESC, h.id DESC
         `);
         res.json(rows);
     } catch (err) {
@@ -312,19 +327,49 @@ app.post('/api/plans', upload.single('image'), async (req, res) => {
     }
 });
 
+// เปลี่ยนสถานะแผนงาน (จัดการการบันทึกประวัติ คำนวณรอบใหม่ หรือลบออกจาก masterplan)
 app.patch('/api/plans/:id/status', async (req, res) => {
     try {
         const { status } = req.body;
         const id = parseInt(req.params.id);
 
         if (status === 'เสร็จสิ้น') {
-            const { rows } = await db.query('SELECT spare_part_id FROM plans WHERE id = $1', [id]);
+            // 1. ดึงข้อมูลแผนงานปัจจุบัน
+            const { rows } = await db.query('SELECT * FROM plans WHERE id = $1', [id]);
             const plan = rows[0];
-            if (plan && plan.spare_part_id) {
-                await db.query('UPDATE spare_parts SET stock_qty = GREATEST(0, stock_qty - 1) WHERE id = $1', [plan.spare_part_id]);
+
+            if (plan) {
+                // 2. ตัดสต็อกอะไหล่ (ถ้ามี)
+                if (plan.spare_part_id) {
+                    await db.query('UPDATE spare_parts SET stock_qty = GREATEST(0, stock_qty - 1) WHERE id = $1', [plan.spare_part_id]);
+                }
+
+                // 3. บันทึกลงตารางประวัติงานเสร็จ (plan_history)
+                await db.query(`
+                    INSERT INTO plan_history (machine_id, task_name, next_due_date, interval_months, spare_part_id, notes, image_url, completed_date)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, CURRENT_DATE)
+                `, [plan.machine_id, plan.task_name, plan.next_due_date, plan.interval_months, plan.spare_part_id, plan.notes, plan.image_url]);
+
+                // 4. เช็ครอบซ้ำ
+                const interval = parseInt(plan.interval_months) || 0;
+                if (interval > 0) {
+                    // มีรอบซ้ำ: นับจากวันที่กดเสร็จสิ้น (CURRENT_DATE) ไปอีกตามจำนวนรอบ และตั้งสถานะเป็น 'รอดำเนินการ'
+                    await db.query(`
+                        UPDATE plans 
+                        SET next_due_date = (CURRENT_DATE + ($1 || ' month')::interval)::date,
+                            status = 'รอดำเนินการ'
+                        WHERE id = $2
+                    `, [interval, id]);
+                } else {
+                    // ไม่มีรอบซ้ำ: ลบออกจาก Master Plan (ตาราง plans)
+                    await db.query('DELETE FROM plans WHERE id = $1', [id]);
+                }
+
+                return res.json({ success: true, message: 'บันทึกประวัติและอัปเดตรอบงานเรียบร้อยแล้ว' });
             }
         }
 
+        // กรณีเปลี่ยนเป็นสถานะอื่น (เช่น 'รอดำเนินการ', 'รออะไหล่')
         await db.query('UPDATE plans SET status = $1 WHERE id = $2', [status, id]);
         res.json({ success: true });
     } catch (err) {
