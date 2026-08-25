@@ -950,8 +950,7 @@
         if (img) formData.append('image', img);
 
         await fetch('/api/plans', { method: 'POST', body: formData });
-        document.getElementById('taskName').value = '';
-        document.getElementById('taskNotes').value = '';
+        e.target.reset();
         loadPlans(currentMachineId);
     };
 
