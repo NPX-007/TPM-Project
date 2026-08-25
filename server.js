@@ -23,7 +23,7 @@ app.use('/uploads', express.static(uploadDir));
 
 // ตั้งค่า File Upload ด้วย Multer
 const storage = multer.diskStorage({
-    destination: (req, file, cb) => cb(null, 'uploads/'),
+    destination: (req, file, cb) => cb(null, uploadDir),
     filename: (req, file, cb) => cb(null, Date.now() + path.extname(file.originalname))
 });
 const upload = multer({ storage });
@@ -38,7 +38,6 @@ const db = new Pool({
 // 1. AUTHENTICATION & USER MANAGEMENT API
 // ====================================================
 
-// เข้าสู่ระบบ
 app.post('/api/login', async (req, res) => {
     try {
         const { username, password } = req.body;
@@ -57,7 +56,6 @@ app.post('/api/login', async (req, res) => {
     }
 });
 
-// สมัครสมาชิก
 app.post('/api/register', async (req, res) => {
     try {
         const { username, password } = req.body;
@@ -79,7 +77,6 @@ app.post('/api/register', async (req, res) => {
     }
 });
 
-// ดึงข้อมูลสมาชิกทั้งหมด
 app.get('/api/users', async (req, res) => {
     try {
         const { rows } = await db.query('SELECT id, username, password, role FROM users ORDER BY id ASC');
@@ -90,7 +87,6 @@ app.get('/api/users', async (req, res) => {
     }
 });
 
-// เปลี่ยนสิทธิ์การใช้งาน (Role)
 app.patch('/api/users/:id/role', async (req, res) => {
     try {
         const id = parseInt(req.params.id);
@@ -103,7 +99,6 @@ app.patch('/api/users/:id/role', async (req, res) => {
     }
 });
 
-// ลบบัญชีสมาชิก
 app.delete('/api/users/:id', async (req, res) => {
     try {
         const id = parseInt(req.params.id);
@@ -115,7 +110,6 @@ app.delete('/api/users/:id', async (req, res) => {
     }
 });
 
-// แก้ไขข้อมูลส่วนตัว / เปลี่ยนรหัสผ่าน
 app.patch('/api/users/profile', async (req, res) => {
     try {
         const { userId, oldPassword, newUsername, newPassword } = req.body;
@@ -206,7 +200,6 @@ app.post('/api/machines', async (req, res) => {
 app.delete('/api/machines/:id', async (req, res) => {
     try {
         const id = parseInt(req.params.id);
-        // ลบข้อมูลที่เกี่ยวข้องในตารางอื่นเพื่อป้องกัน Foreign Key Constraint Error
         await db.query('DELETE FROM breakdowns WHERE machine_id = $1', [id]);
         await db.query('DELETE FROM plans WHERE machine_id = $1', [id]);
         await db.query('DELETE FROM machines WHERE id = $1', [id]);
@@ -262,7 +255,7 @@ app.get('/api/plans-history', async (req, res) => {
             JOIN machines m ON p.machine_id = m.id
             LEFT JOIN spare_parts s ON p.spare_part_id = s.id
             WHERE p.status = 'เสร็จสิ้น'
-            ORDER BY p.next_due_date DESC
+            ORDER BY p.actual_date DESC, p.id DESC
         `);
         res.json(rows);
     } catch (err) {
@@ -314,33 +307,66 @@ app.post('/api/plans', upload.single('image'), async (req, res) => {
     }
 });
 
-// อัปเดตสถานะงานและบันทึกวันดำเนินการจริง
+// อัปเดตสถานะงาน / ยืนยันทำเสร็จ แล้วคำนวณวันรอบถัดไปอัตโนมัติ
 app.patch('/api/plans/:id/status', async (req, res) => {
+    const client = await db.connect();
     try {
+        await client.query('BEGIN'); // ใช้ Transaction เพื่อความถูกต้องของข้อมูล
         const { status, actual_date } = req.body;
         const id = parseInt(req.params.id);
 
         if (status === 'เสร็จสิ้น') {
-            const { rows } = await db.query('SELECT spare_part_id FROM plans WHERE id = $1', [id]);
+            // 1. ดึงข้อมูลแผนเดิมขึ้นมา
+            const { rows } = await client.query('SELECT * FROM plans WHERE id = $1', [id]);
             const plan = rows[0];
-            if (plan && plan.spare_part_id) {
-                await db.query('UPDATE spare_parts SET stock_qty = GREATEST(0, stock_qty - 1) WHERE id = $1', [plan.spare_part_id]);
+
+            if (plan) {
+                // 2. ตัดสต็อกอะไหล่ (ถ้ามีการระบุ)
+                if (plan.spare_part_id) {
+                    await client.query('UPDATE spare_parts SET stock_qty = GREATEST(0, stock_qty - 1) WHERE id = $1', [plan.spare_part_id]);
+                }
+
+                const actualDateStr = actual_date || new Date().toISOString().split('T')[0];
+
+                // 3. เปลี่ยนสถานะรายการนี้เป็น 'เสร็จสิ้น' พร้อมบันทึกวันเสร็จจริง (เพื่อให้อยู่ในตารางประวัติ)
+                await client.query('UPDATE plans SET status = $1, actual_date = $2 WHERE id = $3', [status, actualDateStr, id]);
+
+                // 4. คำนวณวันกำหนดรอบถัดไป (Next Due Date = วันที่ทำเสร็จจริง + รอบเดือน)
+                const intervalMonths = parseInt(plan.interval_months) || 1;
+                const nextDueDate = new Date(actualDateStr);
+                nextDueDate.setMonth(nextDueDate.getMonth() + intervalMonths);
+                const nextDueDateStr = nextDueDate.toISOString().split('T')[0];
+
+                // 5. บันทึกงานรายการใหม่เข้าตารางเพื่อเริ่มนับรอบถัดไป (สถานะ 'รอดำเนินการ')
+                await client.query(`
+                    INSERT INTO plans (machine_id, task_name, next_due_date, interval_months, spare_part_id, notes, image_url, status)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, 'รอดำเนินการ')
+                `, [
+                    plan.machine_id,
+                    plan.task_name,
+                    nextDueDateStr,
+                    intervalMonths,
+                    plan.spare_part_id,
+                    plan.notes,
+                    plan.image_url
+                ]);
             }
-            const actualDate = actual_date || new Date().toISOString().split('T')[0];
-            await db.query('UPDATE plans SET status = $1, actual_date = $2 WHERE id = $3', [status, actualDate, id]);
         } else {
-            // เมื่อย้อนกลับจาก 'เสร็จสิ้น' ให้รีเซ็ต actual_date เป็น NULL
-            await db.query('UPDATE plans SET status = $1, actual_date = NULL WHERE id = $2', [status, id]);
+            // ถ้ายกเลิกหรือย้อนกลับสถานะ
+            await client.query('UPDATE plans SET status = $1, actual_date = NULL WHERE id = $2', [status, id]);
         }
 
+        await client.query('COMMIT');
         res.json({ success: true });
     } catch (err) {
+        await client.query('ROLLBACK');
         console.error('Update Plan Status Error:', err);
         res.status(500).json({ success: false, message: err.message });
+    } finally {
+        client.release();
     }
 });
 
-// ลบแผนงานเดี่ยว
 app.delete('/api/plans/:id', async (req, res) => {
     try {
         const id = parseInt(req.params.id);
@@ -352,7 +378,6 @@ app.delete('/api/plans/:id', async (req, res) => {
     }
 });
 
-// ลบประวัติ/แผนงานแบบหลายรายการ (Bulk Delete)
 app.post('/api/plans/bulk-delete', async (req, res) => {
     try {
         const { ids } = req.body;
@@ -467,7 +492,6 @@ app.put('/api/spare-parts/:id', async (req, res) => {
 app.delete('/api/spare-parts/:id', async (req, res) => {
     try {
         const id = parseInt(req.params.id);
-        // ถอนอ้างอิงอะไหล่ที่อยู่ในตาราง plans ออกก่อนลบ ป้องกัน Foreign Key Constraint Error
         await db.query('UPDATE plans SET spare_part_id = NULL WHERE spare_part_id = $1', [id]);
         await db.query('DELETE FROM spare_parts WHERE id = $1', [id]);
         res.json({ success: true });
