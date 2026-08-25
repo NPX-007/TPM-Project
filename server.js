@@ -52,6 +52,7 @@ app.post('/api/login', async (req, res) => {
             res.status(401).json({ success: false, message: 'ชื่อผู้ใช้งานหรือรหัสผ่านไม่ถูกต้อง' });
         }
     } catch (err) {
+        console.error('Login Error:', err);
         res.status(500).json({ success: false, message: err.message });
     }
 });
@@ -73,16 +74,18 @@ app.post('/api/register', async (req, res) => {
         );
         res.json({ success: true, message: 'สมัครสมาชิกเรียบร้อยแล้ว' });
     } catch (err) {
+        console.error('Register Error:', err);
         res.status(500).json({ success: false, message: err.message });
     }
 });
 
-// ดึงข้อมูลสมาชิกทั้งหมด (ส่ง Password มาด้วยเพื่อแสดงผลฝั่ง Admin)
+// ดึงข้อมูลสมาชิกทั้งหมด
 app.get('/api/users', async (req, res) => {
     try {
         const { rows } = await db.query('SELECT id, username, password, role FROM users ORDER BY id ASC');
         res.json(rows);
     } catch (err) {
+        console.error('Get Users Error:', err);
         res.status(500).json({ success: false, message: err.message });
     }
 });
@@ -90,11 +93,12 @@ app.get('/api/users', async (req, res) => {
 // เปลี่ยนสิทธิ์การใช้งาน (Role)
 app.patch('/api/users/:id/role', async (req, res) => {
     try {
-        const { id } = req.params;
+        const id = parseInt(req.params.id);
         const { role } = req.body;
         await db.query('UPDATE users SET role = $1 WHERE id = $2', [role, id]);
         res.json({ success: true, message: 'อัปเดตสิทธิ์ผู้ใช้เรียบร้อยแล้ว' });
     } catch (err) {
+        console.error('Update Role Error:', err);
         res.status(500).json({ success: false, message: err.message });
     }
 });
@@ -102,10 +106,11 @@ app.patch('/api/users/:id/role', async (req, res) => {
 // ลบบัญชีสมาชิก
 app.delete('/api/users/:id', async (req, res) => {
     try {
-        const { id } = req.params;
+        const id = parseInt(req.params.id);
         await db.query('DELETE FROM users WHERE id = $1', [id]);
         res.json({ success: true, message: 'ลบบัญชีผู้ใช้งานเรียบร้อยแล้ว' });
     } catch (err) {
+        console.error('Delete User Error:', err);
         res.status(500).json({ success: false, message: err.message });
     }
 });
@@ -114,32 +119,34 @@ app.delete('/api/users/:id', async (req, res) => {
 app.patch('/api/users/profile', async (req, res) => {
     try {
         const { userId, oldPassword, newUsername, newPassword } = req.body;
+        const parsedUserId = parseInt(userId);
         
         if (newPassword) {
             const { rows: check } = await db.query(
                 'SELECT id FROM users WHERE id = $1 AND password = $2',
-                [userId, oldPassword]
+                [parsedUserId, oldPassword]
             );
             if (check.length === 0) {
                 return res.json({ success: false, message: 'รหัสผ่านเดิมไม่ถูกต้อง' });
             }
             await db.query(
                 'UPDATE users SET username = $1, password = $2 WHERE id = $3',
-                [newUsername, newPassword, userId]
+                [newUsername, newPassword, parsedUserId]
             );
         } else {
             await db.query(
                 'UPDATE users SET username = $1 WHERE id = $2',
-                [newUsername, userId]
+                [newUsername, parsedUserId]
             );
         }
 
         const { rows: updated } = await db.query(
             'SELECT id, username, role FROM users WHERE id = $1',
-            [userId]
+            [parsedUserId]
         );
         res.json({ success: true, message: 'แก้ไขข้อมูลส่วนตัวสำเร็จ', user: updated[0] });
     } catch (err) {
+        console.error('Update Profile Error:', err);
         res.status(500).json({ success: false, message: err.message });
     }
 });
@@ -164,12 +171,13 @@ app.get('/api/dashboard-summary', async (req, res) => {
         const lowStock = stockRows[0] || { lowStockCount: 0 };
 
         res.json({
-            downtime: Number(bdSum.downtime),
-            repairCost: Number(bdSum.repairCost),
-            lowStockCount: lowStock.lowStockCount,
-            plans
+            downtime: Number(bdSum.downtime || 0),
+            repairCost: Number(bdSum.repairCost || 0),
+            lowStockCount: Number(lowStock.lowStockCount || 0),
+            plans: plans || []
         });
     } catch (err) {
+        console.error('Dashboard Summary Error:', err);
         res.status(500).json({ success: false, message: err.message });
     }
 });
@@ -179,6 +187,7 @@ app.get('/api/machines', async (req, res) => {
         const { rows } = await db.query('SELECT * FROM machines ORDER BY id DESC');
         res.json(rows);
     } catch (err) {
+        console.error('Get Machines Error:', err);
         res.status(500).json({ success: false, message: err.message });
     }
 });
@@ -189,17 +198,19 @@ app.post('/api/machines', async (req, res) => {
         await db.query('INSERT INTO machines (name, location) VALUES ($1, $2)', [name, location]);
         res.json({ success: true });
     } catch (err) {
+        console.error('Add Machine Error:', err);
         res.status(500).json({ success: false, message: err.message });
     }
 });
 
 app.delete('/api/machines/:id', async (req, res) => {
     try {
-        const { id } = req.params;
+        const id = parseInt(req.params.id);
         await db.query('DELETE FROM plans WHERE machine_id = $1', [id]);
         await db.query('DELETE FROM machines WHERE id = $1', [id]);
         res.json({ success: true });
     } catch (err) {
+        console.error('Delete Machine Error:', err);
         res.status(500).json({ success: false, message: err.message });
     }
 });
@@ -219,6 +230,7 @@ app.get('/api/plans-master', async (req, res) => {
         `);
         res.json(rows);
     } catch (err) {
+        console.error('Get Master Plans Error:', err);
         res.status(500).json({ success: false, message: err.message });
     }
 });
@@ -235,6 +247,7 @@ app.get('/api/plans-overdue', async (req, res) => {
         `);
         res.json(rows);
     } catch (err) {
+        console.error('Get Overdue Plans Error:', err);
         res.status(500).json({ success: false, message: err.message });
     }
 });
@@ -251,21 +264,26 @@ app.get('/api/plans-history', async (req, res) => {
         `);
         res.json(rows);
     } catch (err) {
+        console.error('Get History Plans Error:', err);
         res.status(500).json({ success: false, message: err.message });
     }
 });
 
 app.get('/api/plans/:machineId', async (req, res) => {
     try {
+        const machineId = parseInt(req.params.machineId);
+        if (isNaN(machineId)) return res.json([]);
+
         const { rows } = await db.query(`
             SELECT p.*, s.part_name as spare_part_name 
             FROM plans p
             LEFT JOIN spare_parts s ON p.spare_part_id = s.id
             WHERE p.machine_id = $1
             ORDER BY p.id DESC
-        `, [req.params.machineId]);
+        `, [machineId]);
         res.json(rows);
     } catch (err) {
+        console.error('Get Machine Plans Error:', err);
         res.status(500).json({ success: false, message: err.message });
     }
 });
@@ -275,13 +293,21 @@ app.post('/api/plans', upload.single('image'), async (req, res) => {
         const { machine_id, task_name, next_due_date, interval_months, spare_part_id, notes } = req.body;
         const image_url = req.file ? `/uploads/${req.file.filename}` : null;
         
+        const parsedMachineId = parseInt(machine_id);
+        const parsedInterval = parseInt(interval_months) || 1;
+        const parsedSparePartId = (spare_part_id && spare_part_id !== '' && spare_part_id !== 'null' && spare_part_id !== 'undefined') 
+            ? parseInt(spare_part_id) 
+            : null;
+        const cleanNotes = (notes && notes.trim() !== '') ? notes : null;
+
         await db.query(`
             INSERT INTO plans (machine_id, task_name, next_due_date, interval_months, spare_part_id, notes, image_url, status) 
             VALUES ($1, $2, $3, $4, $5, $6, $7, 'รอดำเนินการ')
-        `, [machine_id, task_name, next_due_date, interval_months, spare_part_id || null, notes, image_url]);
+        `, [parsedMachineId, task_name, next_due_date, parsedInterval, parsedSparePartId, cleanNotes, image_url]);
 
         res.json({ success: true });
     } catch (err) {
+        console.error('Add Plan Error:', err);
         res.status(500).json({ success: false, message: err.message });
     }
 });
@@ -289,7 +315,7 @@ app.post('/api/plans', upload.single('image'), async (req, res) => {
 app.patch('/api/plans/:id/status', async (req, res) => {
     try {
         const { status } = req.body;
-        const { id } = req.params;
+        const id = parseInt(req.params.id);
 
         if (status === 'เสร็จสิ้น') {
             const { rows } = await db.query('SELECT spare_part_id FROM plans WHERE id = $1', [id]);
@@ -302,15 +328,18 @@ app.patch('/api/plans/:id/status', async (req, res) => {
         await db.query('UPDATE plans SET status = $1 WHERE id = $2', [status, id]);
         res.json({ success: true });
     } catch (err) {
+        console.error('Update Plan Status Error:', err);
         res.status(500).json({ success: false, message: err.message });
     }
 });
 
 app.delete('/api/plans/:id', async (req, res) => {
     try {
-        await db.query('DELETE FROM plans WHERE id = $1', [req.params.id]);
+        const id = parseInt(req.params.id);
+        await db.query('DELETE FROM plans WHERE id = $1', [id]);
         res.json({ success: true });
     } catch (err) {
+        console.error('Delete Plan Error:', err);
         res.status(500).json({ success: false, message: err.message });
     }
 });
@@ -329,6 +358,7 @@ app.get('/api/breakdowns', async (req, res) => {
         `);
         res.json(rows);
     } catch (err) {
+        console.error('Get Breakdowns Error:', err);
         res.status(500).json({ success: false, message: err.message });
     }
 });
@@ -336,21 +366,32 @@ app.get('/api/breakdowns', async (req, res) => {
 app.post('/api/breakdowns', async (req, res) => {
     try {
         const { machine_id, breakdown_date, downtime_hours, repair_cost, symptom, cause } = req.body;
+        
+        const parsedMachineId = parseInt(machine_id);
+        const parsedDowntime = parseFloat(downtime_hours) || 0;
+        const parsedRepairCost = parseFloat(repair_cost) || 0;
+        const cleanSymptom = (symptom && symptom.trim() !== '') ? symptom : null;
+        const cleanCause = (cause && cause.trim() !== '') ? cause : null;
+
         await db.query(`
             INSERT INTO breakdowns (machine_id, breakdown_date, downtime_hours, repair_cost, symptom, cause)
             VALUES ($1, $2, $3, $4, $5, $6)
-        `, [machine_id, breakdown_date, downtime_hours, repair_cost, symptom, cause]);
+        `, [parsedMachineId, breakdown_date, parsedDowntime, parsedRepairCost, cleanSymptom, cleanCause]);
+        
         res.json({ success: true });
     } catch (err) {
+        console.error('Add Breakdown Error:', err);
         res.status(500).json({ success: false, message: err.message });
     }
 });
 
 app.delete('/api/breakdowns/:id', async (req, res) => {
     try {
-        await db.query('DELETE FROM breakdowns WHERE id = $1', [req.params.id]);
+        const id = parseInt(req.params.id);
+        await db.query('DELETE FROM breakdowns WHERE id = $1', [id]);
         res.json({ success: true });
     } catch (err) {
+        console.error('Delete Breakdown Error:', err);
         res.status(500).json({ success: false, message: err.message });
     }
 });
@@ -364,6 +405,7 @@ app.get('/api/spare-parts', async (req, res) => {
         const { rows } = await db.query('SELECT * FROM spare_parts ORDER BY id DESC');
         res.json(rows);
     } catch (err) {
+        console.error('Get Spare Parts Error:', err);
         res.status(500).json({ success: false, message: err.message });
     }
 });
@@ -371,28 +413,41 @@ app.get('/api/spare-parts', async (req, res) => {
 app.post('/api/spare-parts', async (req, res) => {
     try {
         const { part_name, stock_qty, min_qty } = req.body;
-        await db.query('INSERT INTO spare_parts (part_name, stock_qty, min_qty) VALUES ($1, $2, $3)', [part_name, stock_qty, min_qty]);
+        
+        const parsedStock = parseInt(stock_qty) || 0;
+        const parsedMin = parseInt(min_qty) || 0;
+
+        await db.query('INSERT INTO spare_parts (part_name, stock_qty, min_qty) VALUES ($1, $2, $3)', [part_name, parsedStock, parsedMin]);
         res.json({ success: true });
     } catch (err) {
+        console.error('Add Spare Part Error:', err);
         res.status(500).json({ success: false, message: err.message });
     }
 });
 
 app.put('/api/spare-parts/:id', async (req, res) => {
     try {
+        const id = parseInt(req.params.id);
         const { part_name, stock_qty, min_qty } = req.body;
-        await db.query('UPDATE spare_parts SET part_name = $1, stock_qty = $2, min_qty = $3 WHERE id = $4', [part_name, stock_qty, min_qty, req.params.id]);
+        
+        const parsedStock = parseInt(stock_qty) || 0;
+        const parsedMin = parseInt(min_qty) || 0;
+
+        await db.query('UPDATE spare_parts SET part_name = $1, stock_qty = $2, min_qty = $3 WHERE id = $4', [part_name, parsedStock, parsedMin, id]);
         res.json({ success: true });
     } catch (err) {
+        console.error('Update Spare Part Error:', err);
         res.status(500).json({ success: false, message: err.message });
     }
 });
 
 app.delete('/api/spare-parts/:id', async (req, res) => {
     try {
-        await db.query('DELETE FROM spare_parts WHERE id = $1', [req.params.id]);
+        const id = parseInt(req.params.id);
+        await db.query('DELETE FROM spare_parts WHERE id = $1', [id]);
         res.json({ success: true });
     } catch (err) {
+        console.error('Delete Spare Part Error:', err);
         res.status(500).json({ success: false, message: err.message });
     }
 });
