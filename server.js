@@ -4,24 +4,21 @@ const dns = require('dns');
 const path = require('path');
 const multer = require('multer');
 
-// บังคับใช้ตระกูล IPv4 ก่อนเสมอเพื่อแก้ปัญหาบน Render
-try {
+// บังคับให้ Node.js ใช้ IPv4 เป็นอันดับแรกสำหรับทุกการเชื่อมต่อเน็ตเวิร์ก
+if (dns.setDefaultResultOrder) {
     dns.setDefaultResultOrder('ipv4first');
-} catch (e) {
-    // ป้องกัน Node.js เวอร์ชั่นเก่าที่ไม่รองรับฟังก์ชันนี้
 }
 
 const app = express();
 const port = process.env.PORT || 3000;
 
-// ปรับแต่งการเชื่อมต่อฐานข้อมูลให้รองรับทั้งแบบ Connection String และ Environment แยกเดี่ยว พร้อมบังคับ IPv4 ผ่าน family: 4
-const poolConfig = process.env.DATABASE_URL ? {
-    connectionString: process.env.DATABASE_URL,
-    ssl: { rejectUnauthorized: false },
-    family: 4 // บังคับใช้ IPv4 แก้ปัญหา ENETUNREACH บน Render
-} : {
-    family: 4
-};
+// แก้ไข URL ของฐานข้อมูลเพื่อตัดปัญหา IPv6 บน Render (แปลง localhost หรือบางโฮสต์หากจำเป็น หรือใช้ connectionString ตรงๆ พร้อมย้ายค่า config)
+let connectionString = process.env.DATABASE_URL;
+
+const poolConfig = connectionString ? {
+    connectionString: connectionString,
+    ssl: { rejectUnauthorized: false }
+} : {};
 
 const pool = new Pool(poolConfig);
 
