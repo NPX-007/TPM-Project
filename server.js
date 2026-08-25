@@ -4,22 +4,32 @@ const dns = require('dns');
 const path = require('path');
 const multer = require('multer');
 
-// บังคับให้ใช้ IPv4 เพื่อแก้ปัญหาเชื่อมต่อบน Render
-dns.setDefaultResultOrder('ipv4first');
+// บังคับใช้ตระกูล IPv4 ก่อนเสมอเพื่อแก้ปัญหาบน Render
+try {
+    dns.setDefaultResultOrder('ipv4first');
+} catch (e) {
+    // ป้องกัน Node.js เวอร์ชั่นเก่าที่ไม่รองรับฟังก์ชันนี้
+}
 
 const app = express();
 const port = process.env.PORT || 3000;
 
-const pool = new Pool({
+// ปรับแต่งการเชื่อมต่อฐานข้อมูลให้รองรับทั้งแบบ Connection String และ Environment แยกเดี่ยว พร้อมบังคับ IPv4 ผ่าน family: 4
+const poolConfig = process.env.DATABASE_URL ? {
     connectionString: process.env.DATABASE_URL,
-    ssl: process.env.DATABASE_URL ? { rejectUnauthorized: false } : false
-});
+    ssl: { rejectUnauthorized: false },
+    family: 4 // บังคับใช้ IPv4 แก้ปัญหา ENETUNREACH บน Render
+} : {
+    family: 4
+};
+
+const pool = new Pool(poolConfig);
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static(path.join(__dirname, 'public')));
 
-const upload = multer({ storage: multer.memoryStorage() }); // หรือใช้ Disk ตามต้องการ
+const upload = multer({ storage: multer.memoryStorage() });
 
 // ฟังก์ชันสร้างตารางทั้งหมดอัตโนมัติเมื่อเริ่มระบบ
 async function initDB() {
@@ -80,7 +90,7 @@ async function initDB() {
 
 initDB();
 
-// API Login[cite: 1]
+// API Login
 app.post('/api/login', async (req, res) => {
     const { username, password } = req.body;
     try {
