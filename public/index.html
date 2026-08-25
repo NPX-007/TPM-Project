@@ -5,13 +5,15 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>ระบบบริหารจัดการแผน TPM</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <style>
-        body { background-color: #f8f9fa; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+        body { background-color: #f4f6f9; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
         .sidebar { min-height: 100vh; background-color: #2c3e50; color: white; }
-        .sidebar a { color: #ecf0f1; text-decoration: none; display: block; padding: 12px 20px; border-radius: 4px; }
-        .sidebar a:hover, .sidebar a.active { background-color: #34495e; color: #3498db; }
+        .sidebar a { color: #ecf0f1; text-decoration: none; display: block; padding: 12px 15px; border-radius: 6px; margin-bottom: 4px; }
+        .sidebar a:hover, .sidebar a.active { background-color: #34495e; color: #3498db; font-weight: bold; }
         .thumb-img { width: 45px; height: 45px; object-fit: cover; border-radius: 6px; cursor: pointer; }
-        .table-v-align td { vertical-align: middle; }
+        .table-v-align td, .table-v-align th { vertical-align: middle; }
+        .card-stat { border-left: 5px solid; }
     </style>
 </head>
 <body>
@@ -19,25 +21,62 @@
     <div class="row">
         <!-- Sidebar Navigation -->
         <div class="col-md-2 sidebar p-3">
-            <h4 class="text-center mb-4 text-warning">🛠️ TPM System</h4>
-            <nav class="nav flex-column gap-1">
-                <a href="#" class="active" onclick="switchTab('plansTab', this)">📋 แผน TPM ปัจจุบัน</a>
+            <h4 class="text-center my-3 text-warning">🛠️ TPM System</h4>
+            <hr class="text-secondary">
+            <nav class="nav flex-column">
+                <a href="#" class="active" onclick="switchTab('dashboardTab', this)">📊 Dashboard ภาพรวม</a>
+                <a href="#" onclick="switchTab('plansTab', this)">📋 แผน TPM ปัจจุบัน</a>
+                <a href="#" onclick="switchTab('overdueTab', this)">⚠️ งานเลยกำหนด</a>
+                <a href="#" onclick="switchTab('masterPlanTab', this)">📅 แผนงานทั้งหมด (Master)</a>
                 <a href="#" onclick="switchTab('historyTab', this)">📜 ประวัติงานที่เสร็จสิ้น</a>
                 <a href="#" onclick="switchTab('sparePartsTab', this)">📦 คลังอะไหล่</a>
+                <a href="#" onclick="switchTab('machinesTab', this)">⚙️ จัดการเครื่องจักร</a>
             </nav>
         </div>
 
         <!-- Main Content Area -->
         <div class="col-md-10 p-4">
             
-            <!-- Tab 1: แผน TPM ปัจจุบัน -->
-            <div id="plansTab" class="tab-content">
+            <!-- Tab 1: Dashboard -->
+            <div id="dashboardTab" class="tab-content">
+                <h2 class="mb-4">📊 Dashboard สรุปภาพรวม</h2>
+                <div class="row g-3 mb-4">
+                    <div class="col-md-3">
+                        <div class="card card-stat border-primary shadow-sm p-3">
+                            <small class="text-muted">เครื่องจักรทั้งหมด</small>
+                            <h2 id="statMachines" class="text-primary mb-0">0</h2>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="card card-stat border-info shadow-sm p-3">
+                            <small class="text-muted">งานที่รอดำเนินการ</small>
+                            <h2 id="statPending" class="text-info mb-0">0</h2>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="card card-stat border-danger shadow-sm p-3">
+                            <small class="text-muted">งานเลยกำหนด (Overdue)</small>
+                            <h2 id="statOverdue" class="text-danger mb-0">0</h2>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="card card-stat border-warning shadow-sm p-3">
+                            <small class="text-muted">อะไหล่ใกล้หมด (<= 2 ชิ้น)</small>
+                            <h2 id="statLowStock" class="text-warning mb-0">0</h2>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Tab 2: แผน TPM ปัจจุบัน -->
+            <div id="plansTab" class="tab-content" style="display: none;">
                 <div class="d-flex justify-content-between align-items-center mb-3">
                     <h2>📋 รายการแผน TPM</h2>
-                    <div class="col-md-3">
-                        <select id="machineFilter" class="form-select" onchange="filterMachine(this.value)">
+                    <div class="d-flex gap-2 col-md-6 justify-content-end">
+                        <select id="machineFilter" class="form-select w-50" onchange="filterMachine(this.value)">
                             <option value="">-- แสดงเครื่องจักรทั้งหมด --</option>
                         </select>
+                        <button class="btn btn-primary text-nowrap" onclick="openAddPlanModal()">+ เพิ่มแผนงาน</button>
                     </div>
                 </div>
                 <div class="card shadow-sm">
@@ -53,6 +92,7 @@
                                     <th>สถานะ</th>
                                     <th>รูปภาพ</th>
                                     <th>จัดการสถานะ</th>
+                                    <th>เครื่องมือ</th>
                                 </tr>
                             </thead>
                             <tbody id="plansTableBody"></tbody>
@@ -61,7 +101,50 @@
                 </div>
             </div>
 
-            <!-- Tab 2: ประวัติงานที่เสร็จสิ้น -->
+            <!-- Tab 3: งานเลยกำหนด -->
+            <div id="overdueTab" class="tab-content" style="display: none;">
+                <h2 class="mb-3 text-danger">⚠️ รายการงานที่เลยกำหนด (Overdue)</h2>
+                <div class="card shadow-sm border-danger">
+                    <div class="card-body p-0">
+                        <table class="table table-hover table-v-align mb-0 text-center">
+                            <thead class="table-danger">
+                                <tr>
+                                    <th>เครื่องจักร</th>
+                                    <th>รายการงาน</th>
+                                    <th>กำหนดรอบถัดไป</th>
+                                    <th>สถานะ</th>
+                                    <th>จัดการสถานะ</th>
+                                </tr>
+                            </thead>
+                            <tbody id="overdueTableBody"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Tab 4: Master Plan -->
+            <div id="masterPlanTab" class="tab-content" style="display: none;">
+                <h2 class="mb-3">📅 แผนงานบำรุงรักษาทั้งหมด (Master Plan)</h2>
+                <div class="card shadow-sm">
+                    <div class="card-body p-0">
+                        <table class="table table-bordered table-v-align mb-0 text-center">
+                            <thead class="table-secondary">
+                                <tr>
+                                    <th>ID</th>
+                                    <th>เครื่องจักร</th>
+                                    <th>รายการงาน</th>
+                                    <th>ความถี่รอบซ้ำ</th>
+                                    <th>วันกำหนดถัดไป</th>
+                                    <th>หมายเหตุ</th>
+                                </tr>
+                            </thead>
+                            <tbody id="masterPlanTableBody"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Tab 5: ประวัติงานเสร็จสิ้น -->
             <div id="historyTab" class="tab-content" style="display: none;">
                 <h2 class="mb-3">📜 ประวัติการบำรุงรักษาที่เสร็จสิ้น</h2>
                 <div class="card shadow-sm">
@@ -84,9 +167,12 @@
                 </div>
             </div>
 
-            <!-- Tab 3: คลังอะไหล่ -->
+            <!-- Tab 6: คลังอะไหล่ -->
             <div id="sparePartsTab" class="tab-content" style="display: none;">
-                <h2 class="mb-3">📦 จำนวนอะไหล่คงคลัง</h2>
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <h2>📦 จำนวนอะไหล่คงคลัง</h2>
+                    <button class="btn btn-success" onclick="openAddSparePartModal()">+ เพิ่มรายการอะไหล่</button>
+                </div>
                 <div class="card shadow-sm col-md-8">
                     <div class="card-body p-0">
                         <table class="table table-bordered table-v-align mb-0 text-center">
@@ -94,10 +180,34 @@
                                 <tr>
                                     <th>รหัสอะไหล่</th>
                                     <th>ชื่อรายการอะไหล่</th>
-                                    <th>จำนวนคงเหลือใน สต็อก</th>
+                                    <th>จำนวนคงเหลือ</th>
+                                    <th>จัดการ</th>
                                 </tr>
                             </thead>
                             <tbody id="sparePartsTableBody"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Tab 7: จัดการเครื่องจักร -->
+            <div id="machinesTab" class="tab-content" style="display: none;">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <h2>⚙️ จัดการรายการเครื่องจักร</h2>
+                    <button class="btn btn-primary" onclick="openAddMachineModal()">+ เพิ่มเครื่องจักร</button>
+                </div>
+                <div class="card shadow-sm col-md-8">
+                    <div class="card-body p-0">
+                        <table class="table table-bordered table-v-align mb-0 text-center">
+                            <thead class="table-dark">
+                                <tr>
+                                    <th>ID</th>
+                                    <th>ชื่อเครื่องจักร</th>
+                                    <th>รหัสเครื่องจักร</th>
+                                    <th>จัดการ</th>
+                                </tr>
+                            </thead>
+                            <tbody id="machinesTableBody"></tbody>
                         </table>
                     </div>
                 </div>
@@ -107,18 +217,123 @@
     </div>
 </div>
 
+<!-- Modal: เพิ่ม/แก้ไข แผน TPM -->
+<div class="modal fade" id="planModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="planModalTitle">เพิ่มแผนงาน TPM</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="planForm">
+                    <input type="hidden" id="planId">
+                    <div class="mb-3">
+                        <label class="form-label">เครื่องจักร</label>
+                        <select id="planMachineId" class="form-select" required></select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">ชื่อรายการงาน</label>
+                        <input type="text" id="planTaskName" class="form-control" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">รอบความถี่ (เดือน)</label>
+                        <input type="number" id="planIntervalMonths" class="form-control" value="1" min="1" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">อะไหล่ที่ต้องใช้ (ถ้ามี)</label>
+                        <select id="planSparePartId" class="form-select">
+                            <option value="">-- ไม่ใช้อะไหล่ --</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">วันกำหนดถัดไป</label>
+                        <input type="date" id="planNextDueDate" class="form-control" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">URL รูปภาพ (ถ้ามี)</label>
+                        <input type="text" id="planImageUrl" class="form-control" placeholder="https://...">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">หมายเหตุ</label>
+                        <textarea id="planNotes" class="form-control" rows="2"></textarea>
+                    </div>
+                    <button type="submit" class="btn btn-primary w-100">บันทึกข้อมูล</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal: เพิ่มเครื่องจักร -->
+<div class="modal fade" id="machineModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">เพิ่มเครื่องจักรใหม่</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="machineForm">
+                    <div class="mb-3">
+                        <label class="form-label">ชื่อเครื่องจักร</label>
+                        <input type="text" id="machineName" class="form-control" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">รหัสเครื่องจักร</label>
+                        <input type="text" id="machineCode" class="form-control">
+                    </div>
+                    <button type="submit" class="btn btn-primary w-100">บันทึก</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal: เพิ่ม/แก้ไข อะไหล่ -->
+<div class="modal fade" id="sparePartModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="sparePartModalTitle">เพิ่มรายการอะไหล่</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="sparePartForm">
+                    <input type="hidden" id="sparePartId">
+                    <div class="mb-3">
+                        <label class="form-label">ชื่ออะไหล่</label>
+                        <input type="text" id="sparePartName" class="form-control" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">จำนวนในสต็อก</label>
+                        <input type="number" id="sparePartQty" class="form-control" value="0" min="0" required>
+                    </div>
+                    <button type="submit" class="btn btn-success w-100">บันทึก</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
 <script>
     let currentMachineId = '';
+    let planModal, machineModal, sparePartModal;
 
-    // โหลดข้อมูลเริ่มต้นเมื่อเปิดหน้าเว็บ
     document.addEventListener('DOMContentLoaded', () => {
+        planModal = new bootstrap.Modal(document.getElementById('planModal'));
+        machineModal = new bootstrap.Modal(document.getElementById('machineModal'));
+        sparePartModal = new bootstrap.Modal(document.getElementById('sparePartModal'));
+
+        loadDashboard();
         loadMachines();
         loadPlans();
+        loadOverduePlan();
+        loadMasterPlan();
         loadHistoryPlan();
         loadSpareParts();
     });
 
-    // สลับหน้าจอ Active Tab
     function switchTab(tabId, element) {
         document.querySelectorAll('.tab-content').forEach(el => el.style.display = 'none');
         document.querySelectorAll('.sidebar a').forEach(el => el.classList.remove('active'));
@@ -126,132 +341,318 @@
         element.classList.add('active');
     }
 
-    // โหลดข้อมูล Dropdown เครื่องจักร
+    async function loadDashboard() {
+        const res = await fetch('/api/dashboard');
+        const data = await res.json();
+        document.getElementById('statMachines').innerText = data.totalMachines;
+        document.getElementById('statPending').innerText = data.pendingPlans;
+        document.getElementById('statOverdue').innerText = data.overduePlans;
+        document.getElementById('statLowStock').innerText = data.lowStockParts;
+    }
+
     async function loadMachines() {
-        try {
-            const res = await fetch('/api/machines');
-            const machines = await res.json();
-            const select = document.getElementById('machineFilter');
-            machines.forEach(m => {
-                select.innerHTML += `<option value="${m.id}">${m.name}</option>`;
-            });
-        } catch (err) { console.error('Error loading machines:', err); }
+        const res = await fetch('/api/machines');
+        const machines = await res.json();
+        
+        const selectFilter = document.getElementById('machineFilter');
+        const selectPlan = document.getElementById('planMachineId');
+        const tbody = document.getElementById('machinesTableBody');
+
+        selectFilter.innerHTML = '<option value="">-- แสดงเครื่องจักรทั้งหมด --</option>';
+        selectPlan.innerHTML = '';
+        tbody.innerHTML = '';
+
+        machines.forEach(m => {
+            selectFilter.innerHTML += `<option value="${m.id}">${m.name}</option>`;
+            selectPlan.innerHTML += `<option value="${m.id}">${m.name}</option>`;
+            tbody.innerHTML += `
+                <tr>
+                    <td>${m.id}</td>
+                    <td><strong>${m.name}</strong></td>
+                    <td>${m.code || '-'}</td>
+                    <td><button class="btn btn-sm btn-danger" onclick="deleteMachine(${m.id})">ลบ</button></td>
+                </tr>
+            `;
+        });
     }
 
-    // กรองแผน TPM ตามเครื่องจักร
-    function filterMachine(machineId) {
-        currentMachineId = machineId;
-        loadPlans(machineId);
+    function filterMachine(id) {
+        currentMachineId = id;
+        loadPlans(id);
     }
 
-    // โหลดข้อมูลแผนงาน TPM
     async function loadPlans(machineId = '') {
-        try {
-            const url = machineId ? `/api/plans?machine_id=${machineId}` : '/api/plans';
-            const res = await fetch(url);
-            const plans = await res.json();
-            const tbody = document.getElementById('plansTableBody');
-            tbody.innerHTML = '';
+        const url = machineId ? `/api/plans?machine_id=${machineId}` : '/api/plans';
+        const res = await fetch(url);
+        const plans = await res.json();
+        const tbody = document.getElementById('plansTableBody');
+        tbody.innerHTML = '';
 
-            plans.forEach(p => {
-                const dueDate = p.next_due_date ? p.next_due_date.split('T')[0] : '';
-                let statusBadge = 'bg-secondary';
-                if (p.status === 'เสร็จสิ้น') statusBadge = 'bg-success';
-                else if (p.status === 'รออะไหล่') statusBadge = 'bg-warning text-dark';
-                else if (p.status === 'รอดำเนินการ') statusBadge = 'bg-primary';
+        plans.forEach(p => {
+            const dueDate = p.next_due_date ? p.next_due_date.split('T')[0] : '';
+            let statusBadge = p.status === 'เสร็จสิ้น' ? 'bg-success' : p.status === 'รออะไหล่' ? 'bg-warning text-dark' : 'bg-primary';
 
-                tbody.innerHTML += `
-                    <tr>
-                        <td><strong>${p.machine_name}</strong></td>
-                        <td class="text-start">${p.task_name}</td>
-                        <td><span class="badge bg-outline-dark text-dark">${p.interval_months} เดือน</span></td>
-                        <td>${p.spare_part_name ? `<span class="badge bg-info text-dark">📦 ${p.spare_part_name}</span>` : '-'}</td>
-                        <td class="fw-bold text-danger">${dueDate}</td>
-                        <td><span class="badge ${statusBadge}">${p.status}</span></td>
-                        <td>${p.image_url ? `<img src="${p.image_url}" class="thumb-img" onclick="window.open(this.src)">` : '-'}</td>
-                        <td>
-                            <select class="form-select form-select-sm" onchange="updatePlanStatus(${p.id}, this.value)">
-                                <option value="" disabled selected>เปลี่ยนสถานะ</option>
-                                <option value="รอดำเนินการ">รอดำเนินการ</option>
-                                <option value="รออะไหล่">รออะไหล่</option>
-                                <option value="เสร็จสิ้น">✅ เสร็จสิ้น</option>
-                            </select>
-                        </td>
-                    </tr>
-                `;
-            });
-        } catch (err) { console.error('Error loading plans:', err); }
+            tbody.innerHTML += `
+                <tr>
+                    <td><strong>${p.machine_name}</strong></td>
+                    <td class="text-start">${p.task_name}</td>
+                    <td><span class="badge bg-secondary">${p.interval_months} เดือน</span></td>
+                    <td>${p.spare_part_name ? `<span class="badge bg-info text-dark">📦 ${p.spare_part_name}</span>` : '-'}</td>
+                    <td class="fw-bold text-danger">${dueDate}</td>
+                    <td><span class="badge ${statusBadge}">${p.status}</span></td>
+                    <td>${p.image_url ? `<img src="${p.image_url}" class="thumb-img" onclick="window.open(this.src)">` : '-'}</td>
+                    <td>
+                        <select class="form-select form-select-sm" onchange="updatePlanStatus(${p.id}, this.value)">
+                            <option value="" disabled selected>เปลี่ยนสถานะ</option>
+                            <option value="รอดำเนินการ">รอดำเนินการ</option>
+                            <option value="รออะไหล่">รออะไหล่</option>
+                            <option value="เสร็จสิ้น">✅ เสร็จสิ้น</option>
+                        </select>
+                    </td>
+                    <td>
+                        <button class="btn btn-sm btn-outline-primary me-1" onclick='openEditPlanModal(${JSON.stringify(p)})'>แก้ไข</button>
+                        <button class="btn btn-sm btn-outline-danger" onclick="deletePlan(${p.id})">ลบ</button>
+                    </td>
+                </tr>
+            `;
+        });
     }
 
-    // อัปเดตสถานะงาน (ส่ง Request ไป Backend)
     async function updatePlanStatus(id, status) {
-        try {
-            const res = await fetch(`/api/plans/${id}/status`, {
-                method: 'PATCH',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({ status })
-            });
-            const result = await res.json();
+        const res = await fetch(`/api/plans/${id}/status`, {
+            method: 'PATCH',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ status })
+        });
+        const result = await res.json();
 
-            if (result.success) {
-                if (result.isReset) {
-                    alert('✅ บันทึกลงประวัติงานเสร็จ ตัดสต็อกอะไหล่ และคำนวณตั้งรอบถัดไปเรียบร้อยแล้ว');
-                }
-                // รีเฟรชข้อมูลทุกตารางทันที
-                loadPlans(currentMachineId);
-                loadHistoryPlan();
-                loadSpareParts();
-            } else {
-                alert(result.message || 'เกิดข้อผิดพลาดในการอัปเดต');
+        if (result.success) {
+            if (result.isReset) {
+                alert('✅ บันทึกลงประวัติงานเสร็จ ตัดสต็อกอะไหล่ และคำนวณตั้งรอบถัดไปเรียบร้อยแล้ว');
             }
-        } catch (err) { alert('ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้'); }
+            refreshAllData();
+        } else {
+            alert(result.message || 'เกิดข้อผิดพลาดในการอัปเดต');
+        }
     }
 
-    // โหลดตารางประวัติงานเสร็จสิ้น
+    async function loadOverduePlan() {
+        const res = await fetch('/api/plans/overdue');
+        const plans = await res.json();
+        const tbody = document.getElementById('overdueTableBody');
+        tbody.innerHTML = '';
+
+        plans.forEach(p => {
+            const dueDate = p.next_due_date ? p.next_due_date.split('T')[0] : '';
+            tbody.innerHTML += `
+                <tr>
+                    <td><strong>${p.machine_name}</strong></td>
+                    <td class="text-start">${p.task_name}</td>
+                    <td class="fw-bold text-danger">${dueDate}</td>
+                    <td><span class="badge bg-danger">${p.status}</span></td>
+                    <td>
+                        <button class="btn btn-sm btn-success" onclick="updatePlanStatus(${p.id}, 'เสร็จสิ้น')">ทำเสร็จแล้ว</button>
+                    </td>
+                </tr>
+            `;
+        });
+    }
+
+    async function loadMasterPlan() {
+        const res = await fetch('/api/plans');
+        const plans = await res.json();
+        const tbody = document.getElementById('masterPlanTableBody');
+        tbody.innerHTML = '';
+
+        plans.forEach(p => {
+            const dueDate = p.next_due_date ? p.next_due_date.split('T')[0] : '';
+            tbody.innerHTML += `
+                <tr>
+                    <td>#${p.id}</td>
+                    <td><strong>${p.machine_name}</strong></td>
+                    <td class="text-start">${p.task_name}</td>
+                    <td>ทุกๆ ${p.interval_months} เดือน</td>
+                    <td>${dueDate}</td>
+                    <td>${p.notes || '-'}</td>
+                </tr>
+            `;
+        });
+    }
+
     async function loadHistoryPlan() {
-        try {
-            const res = await fetch('/api/plans-history');
-            const plans = await res.json();
-            const tbody = document.getElementById('historyTableBody');
-            tbody.innerHTML = '';
+        const res = await fetch('/api/plans-history');
+        const plans = await res.json();
+        const tbody = document.getElementById('historyTableBody');
+        tbody.innerHTML = '';
 
-            plans.forEach(p => {
-                const completedDate = p.completed_date ? p.completed_date.split('T')[0] : '';
-                tbody.innerHTML += `
-                    <tr>
-                        <td class="fw-bold text-success">${completedDate}</td>
-                        <td><strong>${p.machine_name || '-'}</strong></td>
-                        <td class="text-start">${p.task_name}</td>
-                        <td><span class="badge bg-secondary">${p.interval_months} เดือน</span></td>
-                        <td>${p.spare_part_name ? `<span class="badge bg-info text-dark">📦 ${p.spare_part_name}</span>` : '-'}</td>
-                        <td class="text-start">${p.notes || '-'}</td>
-                        <td>${p.image_url ? `<img src="${p.image_url}" class="thumb-img" onclick="window.open(this.src)">` : '-'}</td>
-                    </tr>
-                `;
-            });
-        } catch (err) { console.error('Error loading history:', err); }
+        plans.forEach(p => {
+            const completedDate = p.completed_date ? p.completed_date.split('T')[0] : '';
+            tbody.innerHTML += `
+                <tr>
+                    <td class="fw-bold text-success">${completedDate}</td>
+                    <td><strong>${p.machine_name || '-'}</strong></td>
+                    <td class="text-start">${p.task_name}</td>
+                    <td><span class="badge bg-secondary">${p.interval_months} เดือน</span></td>
+                    <td>${p.spare_part_name ? `<span class="badge bg-info text-dark">📦 ${p.spare_part_name}</span>` : '-'}</td>
+                    <td class="text-start">${p.notes || '-'}</td>
+                    <td>${p.image_url ? `<img src="${p.image_url}" class="thumb-img" onclick="window.open(this.src)">` : '-'}</td>
+                </tr>
+            `;
+        });
     }
 
-    // โหลดตารางอะไหล่
     async function loadSpareParts() {
-        try {
-            const res = await fetch('/api/spare-parts');
-            const parts = await res.json();
-            const tbody = document.getElementById('sparePartsTableBody');
-            tbody.innerHTML = '';
+        const res = await fetch('/api/spare-parts');
+        const parts = await res.json();
+        const tbody = document.getElementById('sparePartsTableBody');
+        const selectPlan = document.getElementById('planSparePartId');
 
-            parts.forEach(pt => {
-                const stockBadge = pt.stock_qty <= 2 ? 'bg-danger' : 'bg-success';
-                tbody.innerHTML += `
-                    <tr>
-                        <td>#${pt.id}</td>
-                        <td class="text-start"><strong>${pt.part_name}</strong></td>
-                        <td><span class="badge ${stockBadge} fs-6">${pt.stock_qty} ชิ้น</span></td>
-                    </tr>
-                `;
-            });
-        } catch (err) { console.error('Error loading spare parts:', err); }
+        tbody.innerHTML = '';
+        selectPlan.innerHTML = '<option value="">-- ไม่ใช้อะไหล่ --</option>';
+
+        parts.forEach(pt => {
+            selectPlan.innerHTML += `<option value="${pt.id}">${pt.part_name} (คงเหลือ: ${pt.stock_qty})</option>`;
+            const stockBadge = pt.stock_qty <= 2 ? 'bg-danger' : 'bg-success';
+            tbody.innerHTML += `
+                <tr>
+                    <td>#${pt.id}</td>
+                    <td class="text-start"><strong>${pt.part_name}</strong></td>
+                    <td><span class="badge ${stockBadge} fs-6">${pt.stock_qty} ชิ้น</span></td>
+                    <td>
+                        <button class="btn btn-sm btn-warning" onclick='openEditSparePartModal(${JSON.stringify(pt)})'>แก้ไข/ปรับสต็อก</button>
+                    </td>
+                </tr>
+            `;
+        });
     }
+
+    function refreshAllData() {
+        loadDashboard();
+        loadPlans(currentMachineId);
+        loadOverduePlan();
+        loadMasterPlan();
+        loadHistoryPlan();
+        loadSpareParts();
+    }
+
+    // Modal Actions & Submits
+    function openAddPlanModal() {
+        document.getElementById('planForm').reset();
+        document.getElementById('planId').value = '';
+        document.getElementById('planModalTitle').innerText = 'เพิ่มแผนงาน TPM';
+        planModal.show();
+    }
+
+    function openEditPlanModal(p) {
+        document.getElementById('planId').value = p.id;
+        document.getElementById('planMachineId').value = p.machine_id;
+        document.getElementById('planTaskName').value = p.task_name;
+        document.getElementById('planIntervalMonths').value = p.interval_months;
+        document.getElementById('planSparePartId').value = p.spare_part_id || '';
+        document.getElementById('planNextDueDate').value = p.next_due_date ? p.next_due_date.split('T')[0] : '';
+        document.getElementById('planImageUrl').value = p.image_url || '';
+        document.getElementById('planNotes').value = p.notes || '';
+        document.getElementById('planModalTitle').innerText = 'แก้ไขแผนงาน TPM';
+        planModal.show();
+    }
+
+    document.getElementById('planForm').onsubmit = async (e) => {
+        e.preventDefault();
+        const id = document.getElementById('planId').value;
+        const payload = {
+            machine_id: document.getElementById('planMachineId').value,
+            task_name: document.getElementById('planTaskName').value,
+            interval_months: document.getElementById('planIntervalMonths').value,
+            spare_part_id: document.getElementById('planSparePartId').value || null,
+            next_due_date: document.getElementById('planNextDueDate').value,
+            image_url: document.getElementById('planImageUrl').value,
+            notes: document.getElementById('planNotes').value
+        };
+
+        const url = id ? `/api/plans/${id}` : '/api/plans';
+        const method = id ? 'PUT' : 'POST';
+
+        await fetch(url, {
+            method,
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(payload)
+        });
+
+        planModal.hide();
+        refreshAllData();
+    };
+
+    async function deletePlan(id) {
+        if (confirm('ยืนยันลบรายการแผนงานนี้?')) {
+            await fetch(`/api/plans/${id}`, { method: 'DELETE' });
+            refreshAllData();
+        }
+    }
+
+    function openAddMachineModal() {
+        document.getElementById('machineForm').reset();
+        machineModal.show();
+    }
+
+    document.getElementById('machineForm').onsubmit = async (e) => {
+        e.preventDefault();
+        await fetch('/api/machines', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                name: document.getElementById('machineName').value,
+                code: document.getElementById('machineCode').value
+            })
+        });
+        machineModal.hide();
+        loadMachines();
+        loadDashboard();
+    };
+
+    async function deleteMachine(id) {
+        if (confirm('ยืนยันลบเครื่องจักรนี้? (แผนงานที่เกี่ยวข้องจะถูกลบด้วย)')) {
+            await fetch(`/api/machines/${id}`, { method: 'DELETE' });
+            loadMachines();
+            refreshAllData();
+        }
+    }
+
+    function openAddSparePartModal() {
+        document.getElementById('sparePartForm').reset();
+        document.getElementById('sparePartId').value = '';
+        document.getElementById('sparePartModalTitle').innerText = 'เพิ่มรายการอะไหล่';
+        sparePartModal.show();
+    }
+
+    function openEditSparePartModal(pt) {
+        document.getElementById('sparePartId').value = pt.id;
+        document.getElementById('sparePartName').value = pt.part_name;
+        document.getElementById('sparePartQty').value = pt.stock_qty;
+        document.getElementById('sparePartModalTitle').innerText = 'แก้ไขรายการอะไหล่';
+        sparePartModal.show();
+    }
+
+    document.getElementById('sparePartForm').onsubmit = async (e) => {
+        e.preventDefault();
+        const id = document.getElementById('sparePartId').value;
+        const payload = {
+            part_name: document.getElementById('sparePartName').value,
+            stock_qty: document.getElementById('sparePartQty').value
+        };
+
+        const url = id ? `/api/spare-parts/${id}` : '/api/spare-parts';
+        const method = id ? 'PUT' : 'POST';
+
+        await fetch(url, {
+            method,
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(payload)
+        });
+
+        sparePartModal.hide();
+        loadSpareParts();
+        loadDashboard();
+    };
 </script>
 </body>
 </html>

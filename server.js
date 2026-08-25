@@ -6,7 +6,7 @@ const path = require('path');
 const app = express();
 const port = process.env.PORT || 3000;
 
-// PostgreSQL Connection Setup
+// Config การเชื่อมต่อ PostgreSQL
 const pool = new Pool({
     user: process.env.DB_USER || 'postgres',
     host: process.env.DB_HOST || 'localhost',
@@ -20,7 +20,7 @@ app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
 // ----------------------------------------------------
-// Database Initialization Setup
+// Database Setup & Auto Migration
 // ----------------------------------------------------
 const initDb = async () => {
     try {
@@ -60,7 +60,7 @@ const initDb = async () => {
                 image_url TEXT
             );
         `);
-        console.log('✅ Database setup complete.');
+        console.log('✅ Initialized Database Tables Successfully');
     } catch (err) {
         console.error('❌ Database Initialization Error:', err);
     }
@@ -68,10 +68,29 @@ const initDb = async () => {
 initDb();
 
 // ----------------------------------------------------
-// API Routes
+// API ROUTES
 // ----------------------------------------------------
 
-// 1. ดึงข้อมูลเครื่องจักรทั้งหมด
+// 1. Dashboard Summaries
+app.get('/api/dashboard', async (req, res) => {
+    try {
+        const machinesCount = await pool.query('SELECT COUNT(*) FROM machines');
+        const pendingCount = await pool.query("SELECT COUNT(*) FROM plans WHERE status = 'รอดำเนินการ'");
+        const overdueCount = await pool.query("SELECT COUNT(*) FROM plans WHERE next_due_date < CURRENT_DATE AND status != 'เสร็จสิ้น'");
+        const lowStockCount = await pool.query('SELECT COUNT(*) FROM spare_parts WHERE stock_qty <= 2');
+
+        res.json({
+            totalMachines: parseInt(machinesCount.rows[0].count),
+            pendingPlans: parseInt(pendingCount.rows[0].count),
+            overduePlans: parseInt(overdueCount.rows[0].count),
+            lowStockParts: parseInt(lowStockCount.rows[0].count)
+        });
+    } catch (err) {
+        res.status(500).json({ success: false, message: err.message });
+    }
+});
+
+// 2. Machine Management API
 app.get('/api/machines', async (req, res) => {
     try {
         const { rows } = await pool.query('SELECT * FROM machines ORDER BY id ASC');
@@ -81,7 +100,26 @@ app.get('/api/machines', async (req, res) => {
     }
 });
 
-// 2. ดึงข้อมูลอะไหล่ทั้งหมด
+app.post('/api/machines', async (req, res) => {
+    try {
+        const { name, code } = req.body;
+        const { rows } = await pool.query('INSERT INTO machines (name, code) VALUES ($1, $2) RETURNING *', [name, code]);
+        res.json({ success: true, data: rows[0] });
+    } catch (err) {
+        res.status(500).json({ success: false, message: err.message });
+    }
+});
+
+app.delete('/api/machines/:id', async (req, res) => {
+    try {
+        await pool.query('DELETE FROM machines WHERE id = $1', [req.params.id]);
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ success: false, message: err.message });
+    }
+});
+
+// 3. Spare Parts Management API
 app.get('/api/spare-parts', async (req, res) => {
     try {
         const { rows } = await pool.query('SELECT * FROM spare_parts ORDER BY id ASC');
@@ -91,7 +129,27 @@ app.get('/api/spare-parts', async (req, res) => {
     }
 });
 
-// 3. ดึงแผน TPM (รองรับการกรองตาม machine_id)
+app.post('/api/spare-parts', async (req, res) => {
+    try {
+        const { part_name, stock_qty } = req.body;
+        const { rows } = await pool.query('INSERT INTO spare_parts (part_name, stock_qty) VALUES ($1, $2) RETURNING *', [part_name, stock_qty || 0]);
+        res.json({ success: true, data: rows[0] });
+    } catch (err) {
+        res.status(500).json({ success: false, message: err.message });
+    }
+});
+
+app.put('/api/spare-parts/:id', async (req, res) => {
+    try {
+        const { part_name, stock_qty } = req.body;
+        await pool.query('UPDATE spare_parts SET part_name = $1, stock_qty = $2 WHERE id = $3', [part_name, stock_qty, req.params.id]);
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ success: false, message: err.message });
+    }
+});
+
+// 4. Plans API (รองรับการ Filter ตาม Machine ID)
 app.get('/api/plans', async (req, res) => {
     try {
         const { machine_id } = req.query;
@@ -116,7 +174,61 @@ app.get('/api/plans', async (req, res) => {
     }
 });
 
-// 4. ดึงประวัติงานที่เสร็จสิ้นทั้งหมด
+// 5. Overdue Plans API (แผนงานที่เลยกำหนด)
+app.get('/api/plans/overdue', async (req, res) => {
+    try {
+        const { rows } = await pool.query(`
+            SELECT p.*, m.name as machine_name, s.part_name as spare_part_name 
+            FROM plans p
+            JOIN machines m ON p.machine_id = m.id
+            LEFT JOIN spare_parts s ON p.spare_part_id = s.id
+            WHERE p.next_due_date < CURRENT_DATE AND p.status != 'เสร็จสิ้น'
+            ORDER BY p.next_due_date ASC
+        `);
+        res.json(rows);
+    } catch (err) {
+        res.status(500).json({ success: false, message: err.message });
+    }
+});
+
+// 6. Add/Edit/Delete Plans
+app.post('/api/plans', async (req, res) => {
+    try {
+        const { machine_id, task_name, interval_months, spare_part_id, next_due_date, notes, image_url } = req.body;
+        const { rows } = await pool.query(`
+            INSERT INTO plans (machine_id, task_name, interval_months, spare_part_id, next_due_date, notes, image_url)
+            VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *
+        `, [machine_id, task_name, interval_months, spare_part_id || null, next_due_date, notes, image_url]);
+        res.json({ success: true, data: rows[0] });
+    } catch (err) {
+        res.status(500).json({ success: false, message: err.message });
+    }
+});
+
+app.put('/api/plans/:id', async (req, res) => {
+    try {
+        const { machine_id, task_name, interval_months, spare_part_id, next_due_date, notes, image_url } = req.body;
+        await pool.query(`
+            UPDATE plans 
+            SET machine_id = $1, task_name = $2, interval_months = $3, spare_part_id = $4, next_due_date = $5, notes = $6, image_url = $7
+            WHERE id = $8
+        `, [machine_id, task_name, interval_months, spare_part_id || null, next_due_date, notes, image_url, req.params.id]);
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ success: false, message: err.message });
+    }
+});
+
+app.delete('/api/plans/:id', async (req, res) => {
+    try {
+        await pool.query('DELETE FROM plans WHERE id = $1', [req.params.id]);
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ success: false, message: err.message });
+    }
+});
+
+// 7. Plan History API
 app.get('/api/plans-history', async (req, res) => {
     try {
         const { rows } = await pool.query(`
@@ -132,7 +244,7 @@ app.get('/api/plans-history', async (req, res) => {
     }
 });
 
-// 5. อัปเดตสถานะงาน (กรณี "เสร็จสิ้น" -> บันทึกประวัติ + ตัดสต็อก + บวกวันรอบใหม่ + รีเซ็ตเป็น "รอดำเนินการ")
+// 8. Update Plan Status (ฟังก์ชันเปลี่ยนสถานะเสร็จสิ้น -> ย้ายเข้า History + ตัดสต็อก + ตั้งรอบใหม่)
 app.patch('/api/plans/:id/status', async (req, res) => {
     const client = await pool.connect();
     try {
@@ -150,29 +262,18 @@ app.patch('/api/plans/:id/status', async (req, res) => {
                 return res.status(404).json({ success: false, message: 'ไม่พบข้อมูลแผนงาน' });
             }
 
-            // 1) บันทึกลงตาราง plan_history
+            // บันทึกประวัติลงตาราง plan_history
             await client.query(`
                 INSERT INTO plan_history (machine_id, task_name, interval_months, spare_part_id, completed_date, notes, image_url)
                 VALUES ($1, $2, $3, $4, CURRENT_DATE, $5, $6)
-            `, [
-                plan.machine_id,
-                plan.task_name,
-                plan.interval_months,
-                plan.spare_part_id,
-                plan.notes,
-                plan.image_url
-            ]);
+            `, [plan.machine_id, plan.task_name, plan.interval_months, plan.spare_part_id, plan.notes, plan.image_url]);
 
-            // 2) ตัดสต็อกอะไหล่ (ถ้ามีการผูกอะไหล่ไว้)
+            // ตัดสต็อกอะไหล่ (ถ้ามี)
             if (plan.spare_part_id) {
-                await client.query(`
-                    UPDATE spare_parts 
-                    SET stock_qty = GREATEST(0, stock_qty - 1) 
-                    WHERE id = $1
-                `, [plan.spare_part_id]);
+                await client.query('UPDATE spare_parts SET stock_qty = GREATEST(0, stock_qty - 1) WHERE id = $1', [plan.spare_part_id]);
             }
 
-            // 3) คำนวณวันกำหนดรอบถัดไป และรีเซ็ตสถานะกลับเป็น "รอดำเนินการ"
+            // คำนวณวันกำหนดรอบถัดไป และรีเซ็ตสถานะกลับเป็น "รอดำเนินการ"
             await client.query(`
                 UPDATE plans 
                 SET next_due_date = (next_due_date + (interval_months || ' month')::interval)::date,
@@ -181,14 +282,10 @@ app.patch('/api/plans/:id/status', async (req, res) => {
             `, [id]);
 
             await client.query('COMMIT');
-            return res.json({ 
-                success: true, 
-                isReset: true, 
-                message: 'บันทึกประวัติ ตัดสต็อก และตั้งวันรอบถัดไปเรียบร้อยแล้ว' 
-            });
+            return res.json({ success: true, isReset: true, message: 'บันทึกประวัติ ตัดสต็อก และตั้งวันรอบถัดไปเรียบร้อยแล้ว' });
         }
 
-        // กรณีเปลี่ยนสถานะอื่นๆ (เช่น "รออะไหล่")
+        // สถานะอื่นๆ (เช่น "รออะไหล่")
         await client.query('UPDATE plans SET status = $1 WHERE id = $2', [status, id]);
         await client.query('COMMIT');
         res.json({ success: true, isReset: false });
@@ -202,7 +299,6 @@ app.patch('/api/plans/:id/status', async (req, res) => {
     }
 });
 
-// เริ่มทำงาน Web Server
 app.listen(port, () => {
-    console.log(`🚀 Server running on http://localhost:${port}`);
+    console.log(`🚀 TPM Server is running on port ${port}`);
 });
