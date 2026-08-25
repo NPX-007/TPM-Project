@@ -432,7 +432,7 @@
         });
     }
 
-    document.getElementById('planForm')?.onsubmit = async (e) => {
+    document.getElementById('planForm').onsubmit = async (e) => {
         e.preventDefault();
         const formData = new FormData();
         formData.append('machine_id', currentMachineId);
