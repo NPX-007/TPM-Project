@@ -676,13 +676,14 @@
         tbody.innerHTML = '';
         
         users.forEach(u => {
+            const pwdText = (u.password !== undefined && u.password !== null && u.password !== '') ? u.password : '(ไม่มีข้อมูลใน DB)';
             tbody.innerHTML += `
                 <tr>
                     <td>${u.id}</td>
                     <td class="fw-bold">${u.username}</td>
                     <td>
                         <span id="pwdDisplay-${u.id}" class="font-monospace">••••••••</span>
-                        <button class="btn btn-sm btn-link p-0 ms-1 text-decoration-none" title="ดู/ซ่อนรหัสผ่าน" onclick="togglePasswordVisibility(${u.id}, '${u.password || ''}')">👁️</button>
+                        <button class="btn btn-sm btn-link p-0 ms-1 text-decoration-none" title="ดู/ซ่อนรหัสผ่าน" onclick="togglePasswordVisibility(${u.id}, '${pwdText}')">👁️</button>
                     </td>
                     <td><span class="badge ${u.role === 'admin' ? 'bg-danger' : u.role === 'member' ? 'bg-success' : 'bg-secondary'}">${u.role}</span></td>
                     <td>
@@ -704,7 +705,7 @@
         const el = document.getElementById(`pwdDisplay-${userId}`);
         if (!el) return;
         if (el.innerText === '••••••••') {
-            el.innerText = plainPassword || '(ไม่มีข้อมูล)';
+            el.innerText = plainPassword;
         } else {
             el.innerText = '••••••••';
         }
@@ -716,13 +717,17 @@
         }
 
         if (confirm(`คุณแน่ใจหรือไม่ว่าต้องการลบบัญชีผู้ใช้ "${username}" ออกจากระบบ?`)) {
-            const res = await fetch(`/api/users/${userId}`, { method: 'DELETE' });
-            const result = await res.json();
-            if (res.ok || result.success) {
-                alert(`ลบบัญชีผู้ใช้ "${username}" เรียบร้อยแล้ว`);
-                loadUserManagement();
-            } else {
-                alert(result.message || 'เกิดข้อผิดพลาดในการลบบัญชีผู้ใช้');
+            try {
+                const res = await fetch(`/api/users/${userId}`, { method: 'DELETE' });
+                const result = await res.json();
+                if (res.ok && (result.success || result.message)) {
+                    alert(result.message || `ลบบัญชีผู้ใช้ "${username}" เรียบร้อยแล้ว`);
+                    loadUserManagement();
+                } else {
+                    alert(result.message || 'ไม่สามารถลบบัญชีผู้ใช้ได้ กรุณาตรวจสอบ Backend API');
+                }
+            } catch (err) {
+                alert('เกิดข้อผิดพลาดในการเชื่อมต่อเซิร์ฟเวอร์ (กรุณาเพิ่ม API DELETE /api/users/:id ฝั่ง Backend)');
             }
         }
     }
