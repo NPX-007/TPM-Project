@@ -555,7 +555,7 @@
         XLSX.writeFile(wb, `Master_Plan_TPM_${new Date().toISOString().split('T')[0]}.xlsx`);
     }
 
-    // ดาวน์โหลด PDF (ตัดสี, รอบซ้ำ, อะไหล่ ออกตามคำขอ)
+    // ดาวน์โหลด PDF (ปรับแต่งสัดส่วน, จัดการ Alignment และเพิ่มเส้นขอบชัดเจน)
     function downloadMasterPlanPDF() {
         const checkedRows = document.querySelectorAll('.master-cb:checked');
         if (checkedRows.length === 0) {
@@ -569,15 +569,15 @@
             <h3 style="text-align: center; font-family: sans-serif; margin-bottom: 15px;">
                 ตาราง Master Plan - แผนการบำรุงรักษา (TPM)
             </h3>
-            <table border="1" style="width: 100%; border-collapse: collapse; text-align: center; font-size: 11px; font-family: sans-serif;">
+            <table style="width: 100%; border-collapse: collapse; font-size: 11px; font-family: sans-serif; border: 1px solid #444;">
                 <thead style="background-color: #212529; color: white;">
                     <tr>
-                        <th style="padding: 8px; width: 12%;">วันที่กำหนด</th>
-                        <th style="padding: 8px; width: 25%;">เครื่องจักร</th>
-                        <th style="padding: 8px; width: 25%;">ชื่องาน</th>
-                        <th style="padding: 8px; width: 12%;">สถานะ</th>
-                        <th style="padding: 8px; width: 16%;">หมายเหตุ</th>
-                        <th style="padding: 8px; width: 10%;">รูป</th>
+                        <th style="padding: 8px; width: 13%; border: 1px solid #444; text-align: center;">วันที่กำหนด</th>
+                        <th style="padding: 8px; width: 27%; border: 1px solid #444; text-align: left;">เครื่องจักร</th>
+                        <th style="padding: 8px; width: 22%; border: 1px solid #444; text-align: left;">ชื่องาน</th>
+                        <th style="padding: 8px; width: 13%; border: 1px solid #444; text-align: center;">สถานะ</th>
+                        <th style="padding: 8px; width: 15%; border: 1px solid #444; text-align: center;">หมายเหตุ</th>
+                        <th style="padding: 8px; width: 10%; border: 1px solid #444; text-align: center;">รูป</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -597,12 +597,12 @@
 
             tableHtml += `
                 <tr>
-                    <td style="padding: 6px;">${dueDate}</td>
-                    <td style="padding: 6px; text-align: left;">${machine}</td>
-                    <td style="padding: 6px; text-align: left;">${task}</td>
-                    <td style="padding: 6px;">${status}</td>
-                    <td style="padding: 6px; text-align: left;">${notes}</td>
-                    <td style="padding: 6px;">${imgHtml}</td>
+                    <td style="padding: 6px; border: 1px solid #ccc; text-align: center;">${dueDate}</td>
+                    <td style="padding: 6px; border: 1px solid #ccc; text-align: left;">${machine}</td>
+                    <td style="padding: 6px; border: 1px solid #ccc; text-align: left;">${task}</td>
+                    <td style="padding: 6px; border: 1px solid #ccc; text-align: center;">${status}</td>
+                    <td style="padding: 6px; border: 1px solid #ccc; text-align: center;">${notes}</td>
+                    <td style="padding: 6px; border: 1px solid #ccc; text-align: center;">${imgHtml}</td>
                 </tr>
             `;
         });
@@ -751,6 +751,18 @@
             if (currentUser.role === 'admin') document.getElementById('btnDeleteMachine').style.display = 'block';
             loadPlans(id);
             loadSpareDropdown();
+        }
+    }
+
+    async function deleteCurrentMachine() {
+        if (!currentMachineId) return;
+        if (confirm('คุณต้องการลบเครื่องจักรนี้และแผนงานทั้งหมดของเครื่องนี้ใช่หรือไม่?')) {
+            await fetch(`/api/machines/${currentMachineId}`, { method: 'DELETE' });
+            alert('ลบเครื่องจักรเรียบร้อยแล้ว');
+            currentMachineId = null;
+            document.getElementById('planCard').style.display = 'none';
+            loadMachines();
+            loadDashboard();
         }
     }
 
