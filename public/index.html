@@ -483,6 +483,7 @@
         const tbody = document.getElementById('masterTableBody');
         tbody.innerHTML = '';
         const today = new Date().toISOString().split('T')[0];
+        const canEdit = currentUser && (currentUser.role === 'admin' || currentUser.role === 'member');
 
         plans.forEach(p => {
             const dueDate = p.next_due_date ? p.next_due_date.split('T')[0] : '';
@@ -499,7 +500,14 @@
                     <td class="text-start">${p.task_name}</td>
                     <td><small class="badge bg-info text-dark">รอบ ${p.interval_months} ด.</small></td>
                     <td>${p.spare_part_name ? `<span class="badge bg-info text-dark">📦 ${p.spare_part_name}</span>` : '-'}</td>
-                    <td><span class="badge ${p.status === 'เสร็จสิ้น' ? 'bg-success' : 'bg-warning text-dark'}">${p.status}</span></td>
+                    <td>
+                        ${canEdit ? `
+                        <select class="form-select form-select-sm" onchange="updatePlanStatus(${p.id}, this.value)">
+                            <option value="รอดำเนินการ" ${p.status === 'รอดำเนินการ' ? 'selected' : ''}>รอดำเนินการ</option>
+                            <option value="รออะไหล่" ${p.status === 'รออะไหล่' ? 'selected' : ''}>รออะไหล่</option>
+                            <option value="เสร็จสิ้น" ${p.status === 'เสร็จสิ้น' ? 'selected' : ''}>เสร็จสิ้น</option>
+                        </select>` : `<span class="badge ${p.status === 'เสร็จสิ้น' ? 'bg-success' : 'bg-warning text-dark'}">${p.status}</span>`}
+                    </td>
                     <td class="text-start">${p.notes || '-'}</td>
                     <td>${p.image_url ? `<img src="${p.image_url}" class="thumb-img" onclick="window.open(this.src)">` : '-'}</td>
                 </tr>
@@ -542,13 +550,16 @@
         checkedRows.forEach(cb => {
             const tr = cb.closest('tr');
             const cols = tr.children;
+            const statusEl = cols[7].querySelector('select');
+            const statusText = statusEl ? statusEl.value : cols[7].innerText.trim();
+
             data.push([
                 cols[2].innerText,
                 cols[3].innerText,
                 cols[4].innerText,
                 cols[5].innerText,
                 cols[6].innerText,
-                cols[7].innerText,
+                statusText,
                 cols[8].innerText
             ]);
         });
@@ -593,7 +604,8 @@
             const dueDate = cols[2].innerText;
             const machine = cols[3].innerText;
             const task = cols[4].innerText;
-            const status = cols[7].innerText;
+            const statusEl = cols[7].querySelector('select');
+            const status = statusEl ? statusEl.value : cols[7].innerText.trim();
             const notes = cols[8].innerText;
             const imgEl = cols[9].querySelector('img');
             const imgHtml = imgEl ? `<img src="${imgEl.src}" style="width: 35px; height: 35px; object-fit: cover; border-radius: 4px;">` : '-';
@@ -889,6 +901,7 @@
         if (currentMachineId) loadPlans(currentMachineId);
         loadDashboard();
         loadSpareParts();
+        loadMasterPlan();
     }
 
     async function deletePlan(id) {
@@ -896,6 +909,7 @@
             await fetch(`/api/plans/${id}`, { method: 'DELETE' });
             if (currentMachineId) loadPlans(currentMachineId);
             loadDashboard();
+            loadMasterPlan();
         }
     }
 
