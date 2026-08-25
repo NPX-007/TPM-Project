@@ -543,7 +543,7 @@
                         <td>${p.spare_part_name ? `<span class="badge bg-info text-dark">📦 ${escapeHtml(p.spare_part_name)}</span>` : '-'}</td>
                         <td>
                             ${canEdit ? `
-                            <select class="form-select form-select-sm" onchange="updatePlanStatus(${p.id}, this.value)">
+                            <select class="form-select form-select-sm" onchange="updatePlanStatus(${p.id}, this.value, ${p.interval_months})">
                                 <option value="รอดำเนินการ" ${p.status === 'รอดำเนินการ' ? 'selected' : ''}>รอดำเนินการ</option>
                                 <option value="รออะไหล่" ${p.status === 'รออะไหล่' ? 'selected' : ''}>รออะไหล่</option>
                                 <option value="เสร็จสิ้น" ${p.status === 'เสร็จสิ้น' ? 'selected' : ''}>เสร็จสิ้น</option>
@@ -993,7 +993,7 @@
                     <td>${p.spare_part_name ? `<span class="badge bg-info text-dark">📦 ${escapeHtml(p.spare_part_name)}</span>` : '-'}</td>
                     <td>
                         ${canEdit ? `
-                        <select class="form-select form-select-sm" onchange="updatePlanStatus(${p.id}, this.value)">
+                        <select class="form-select form-select-sm" onchange="updatePlanStatus(${p.id}, this.value, ${p.interval_months})">
                             <option value="รอดำเนินการ" ${p.status === 'รอดำเนินการ' ? 'selected' : ''}>รอดำเนินการ</option>
                             <option value="รออะไหล่" ${p.status === 'รออะไหล่' ? 'selected' : ''}>รออะไหล่</option>
                             <option value="เสร็จสิ้น" ${p.status === 'เสร็จสิ้น' ? 'selected' : ''}>เสร็จสิ้น</option>
@@ -1029,8 +1029,11 @@
         }
     };
 
-    async function updatePlanStatus(id, status) {
+    async function updatePlanStatus(id, status, intervalMonths = 1) {
         let actual_date = null;
+        let next_due_date = null;
+        let targetStatus = status;
+
         if (status === 'เสร็จสิ้น') {
             const today = new Date().toISOString().split('T')[0];
             actual_date = prompt('ระบุวันดำเนินการตามจริง (YYYY-MM-DD):', today);
@@ -1040,13 +1043,36 @@
                 return;
             }
             if (!actual_date.trim()) actual_date = today;
+
+            // คำนวณวันกำหนดครั้งถัดไปโดยนับจากวันที่ดำเนินการจริง + จำนวนเดือนรอบซ้ำ
+            const parts = actual_date.split('-');
+            if (parts.length === 3) {
+                const year = parseInt(parts[0], 10);
+                const month = parseInt(parts[1], 10) - 1;
+                const day = parseInt(parts[2], 10);
+                const calcDate = new Date(year, month, day);
+                calcDate.setMonth(calcDate.getMonth() + parseInt(intervalMonths || 1));
+
+                const yyyy = calcDate.getFullYear();
+                const mm = String(calcDate.getMonth() + 1).padStart(2, '0');
+                const dd = String(calcDate.getDate()).padStart(2, '0');
+                next_due_date = `${yyyy}-${mm}-${dd}`;
+            }
+
+            // เมื่อบันทึกงานเสร็จแล้ว สถานะใน Master Plan สำหรับรอบใหม่จะปรับกลับเป็น "รอดำเนินการ"
+            targetStatus = 'รอดำเนินการ';
         }
 
         try {
             await fetch(`/api/plans/${id}/status`, {
                 method: 'PATCH',
                 headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({status, actual_date})
+                body: JSON.stringify({
+                    status: targetStatus,
+                    completed_status: status,
+                    actual_date: actual_date,
+                    next_due_date: next_due_date
+                })
             });
             if (currentMachineId) loadPlans(currentMachineId);
             loadDashboard();
