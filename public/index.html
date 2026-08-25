@@ -127,7 +127,9 @@
                                     <select id="intervalMonths" class="form-select"><option value="1">ทุก 1 เดือน</option><option value="3">ทุก 3 เดือน</option><option value="6">ทุก 6 เดือน</option><option value="12">ทุก 1 ปี</option></select>
                                 </div>
                             </div>
-                            <textarea id="taskNotes" class="form-control mb-2" placeholder="หมายเหตุ / อะไหล่"></textarea>
+                            <label class="small text-muted">เลือกอะไหล่ในคลังที่ต้องใช้ (ถ้ามี):</label>
+                            <select id="taskSparePart" class="form-select mb-2"></select>
+                            <textarea id="taskNotes" class="form-control mb-2" placeholder="หมายเหตุ / รายละเอียดงานเพิ่มเติม"></textarea>
                             <input type="file" id="taskImage" class="form-control mb-2" accept="image/*">
                             <button type="submit" class="btn btn-success w-100">บันทึกแผน TPM</button>
                         </form>
@@ -136,7 +138,7 @@
                         <div class="table-responsive">
                             <table class="table table-bordered text-center">
                                 <thead class="table-dark">
-                                    <tr><th>ชื่องาน</th><th>กำหนด</th><th>รอบ</th><th>สถานะ</th><th>รูป</th><th>จัดการ</th></tr>
+                                    <tr><th>ชื่องาน</th><th>กำหนด</th><th>รอบ</th><th>อะไหล่ที่ใช้</th><th>สถานะ</th><th>รูป</th><th>จัดการ</th></tr>
                                 </thead>
                                 <tbody id="planTableBody"></tbody>
                             </table>
@@ -153,7 +155,7 @@
                 <div class="table-responsive">
                     <table class="table table-bordered text-center">
                         <thead class="table-danger">
-                            <tr><th>กำหนดเดิม</th><th>เครื่องจักร</th><th>ชื่องาน</th><th>รอบซ้ำ</th><th>สถานะ</th><th>หมายเหตุ</th><th>รูป</th></tr>
+                            <tr><th>กำหนดเดิม</th><th>เครื่องจักร</th><th>ชื่องาน</th><th>รอบซ้ำ</th><th>อะไหล่ที่ใช้</th><th>สถานะ</th><th>หมายเหตุ</th><th>รูป</th></tr>
                         </thead>
                         <tbody id="overdueTableBody"></tbody>
                     </table>
@@ -174,7 +176,7 @@
                 <div class="table-responsive">
                     <table class="table table-bordered text-center" id="masterTable">
                         <thead class="table-dark">
-                            <tr><th>สถานะสี</th><th>วันที่กำหนด</th><th>เครื่องจักร</th><th>ชื่องาน</th><th>รอบซ้ำ</th><th>สถานะ</th><th>หมายเหตุ</th><th>รูป</th></tr>
+                            <tr><th>สถานะสี</th><th>วันที่กำหนด</th><th>เครื่องจักร</th><th>ชื่องาน</th><th>รอบซ้ำ</th><th>อะไหล่ที่ใช้</th><th>สถานะ</th><th>หมายเหตุ</th><th>รูป</th></tr>
                         </thead>
                         <tbody id="masterTableBody"></tbody>
                     </table>
@@ -236,7 +238,7 @@
                 <div class="table-responsive">
                     <table class="table table-bordered text-center">
                         <thead class="table-success">
-                            <tr><th>กำหนดเดิม</th><th>เครื่องจักร</th><th>ชื่องาน</th><th>รอบซ้ำ</th><th>หมายเหตุ</th><th>รูป</th></tr>
+                            <tr><th>กำหนดเดิม</th><th>เครื่องจักร</th><th>ชื่องาน</th><th>รอบซ้ำ</th><th>อะไหล่ที่ใช้</th><th>หมายเหตุ</th><th>รูป</th></tr>
                         </thead>
                         <tbody id="historyTableBody"></tbody>
                     </table>
@@ -274,18 +276,51 @@
                     <label class="form-label small fw-bold">ชื่อผู้ใช้งาน (Username)</label>
                     <input type="text" id="editProfileUser" class="form-control" required>
                 </div>
+                <hr>
+                <p class="text-muted small m-0 mb-2">*(กรอกช่องด้านล่างเฉพาะเมื่อต้องการเปลี่ยนรหัสผ่านเท่านั้น)</p>
                 <div class="mb-3">
-                    <label class="form-label small fw-bold text-danger">รหัสผ่านเดิม (จำเป็นต้องใส่เพื่อยืนยัน)</label>
-                    <input type="password" id="oldProfilePass" class="form-control" placeholder="กรอกรหัสผ่านปัจจุบัน" required>
+                    <label class="form-label small fw-bold text-danger">รหัสผ่านเดิม</label>
+                    <input type="password" id="oldProfilePass" class="form-control" placeholder="กรอกเฉพาะเมื่อต้องการเปลี่ยนรหัสผ่าน">
                 </div>
                 <div class="mb-3">
-                    <label class="form-label small fw-bold text-primary">รหัสผ่านใหม่ (เว้นว่างไว้ถ้าไม่ต้องการเปลี่ยน)</label>
+                    <label class="form-label small fw-bold text-primary">รหัสผ่านใหม่</label>
                     <input type="password" id="newProfilePass" class="form-control" placeholder="กรอกรหัสผ่านใหม่">
                 </div>
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">ยกเลิก</button>
                 <button type="button" class="btn btn-primary" onclick="updateMyProfile()">บันทึกการเปลี่ยนแปลง</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal แก้ไขข้อมูลอะไหล่ -->
+<div class="modal fade" id="editSpareModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">📦 แก้ไขข้อมูลอะไหล่</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="editSpareId">
+                <div class="mb-3">
+                    <label class="form-label small fw-bold">ชื่ออะไหล่</label>
+                    <input type="text" id="editSpareName" class="form-control" required>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label small fw-bold">จำนวนคงเหลือ</label>
+                    <input type="number" id="editSpareQty" class="form-control" required>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label small fw-bold">จุดแจ้งเตือน (ขั้นต่ำ)</label>
+                    <input type="number" id="editSpareMin" class="form-control" required>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">ยกเลิก</button>
+                <button type="button" class="btn btn-primary" onclick="submitEditSpare()">บันทึกการแก้ไข</button>
             </div>
         </div>
     </div>
@@ -357,6 +392,7 @@
 
         loadMachines();
         loadDashboard();
+        loadSpareDropdown();
     }
 
     function logout() {
@@ -378,7 +414,6 @@
         const newPassword = document.getElementById('newProfilePass').value;
 
         if (!newUsername) return alert('กรุณากรอกชื่อผู้ใช้งาน');
-        if (!oldPassword) return alert('กรุณากรอกรหัสผ่านเดิมเพื่อยืนยัน');
 
         const res = await fetch('/api/users/profile', {
             method: 'PATCH',
@@ -394,7 +429,6 @@
         const result = await res.json();
         if (result.success) {
             alert(result.message);
-            // อัปเดตข้อมูลเซสชันใหม่ในเบราว์เซอร์
             currentUser = result.user;
             localStorage.setItem('user', JSON.stringify(currentUser));
             document.getElementById('userBadge').innerText = `${currentUser.username} (${currentUser.role.toUpperCase()})`;
@@ -429,6 +463,7 @@
                     <td><strong>${p.machine_name}</strong> (${p.location})</td>
                     <td class="text-start">${p.task_name}</td>
                     <td><small class="badge bg-info text-dark">รอบ ${p.interval_months} ด.</small></td>
+                    <td>${p.spare_part_name ? `<span class="badge bg-info text-dark">📦 ${p.spare_part_name}</span>` : '-'}</td>
                     <td><span class="badge ${p.status === 'เสร็จสิ้น' ? 'bg-success' : 'bg-warning text-dark'}">${p.status}</span></td>
                     <td class="text-start">${p.notes || '-'}</td>
                     <td>${p.image_url ? `<img src="${p.image_url}" class="thumb-img" onclick="window.open(this.src)">` : '-'}</td>
@@ -450,6 +485,7 @@
                     <td><strong>${p.machine_name}</strong></td>
                     <td class="text-start">${p.task_name}</td>
                     <td><small class="badge bg-info text-dark">รอบ ${p.interval_months} ด.</small></td>
+                    <td>${p.spare_part_name ? `<span class="badge bg-info text-dark">📦 ${p.spare_part_name}</span>` : '-'}</td>
                     <td><span class="badge bg-danger">${p.status}</span></td>
                     <td class="text-start">${p.notes || '-'}</td>
                     <td>${p.image_url ? `<img src="${p.image_url}" class="thumb-img" onclick="window.open(this.src)">` : '-'}</td>
@@ -471,6 +507,7 @@
                     <td><strong>${p.machine_name}</strong></td>
                     <td class="text-start">${p.task_name}</td>
                     <td><small class="badge bg-info text-dark">รอบ ${p.interval_months} ด.</small></td>
+                    <td>${p.spare_part_name ? `<span class="badge bg-info text-dark">📦 ${p.spare_part_name}</span>` : '-'}</td>
                     <td class="text-start">${p.notes || '-'}</td>
                     <td>${p.image_url ? `<img src="${p.image_url}" class="thumb-img" onclick="window.open(this.src)">` : '-'}</td>
                 </tr>
@@ -575,6 +612,7 @@
             document.getElementById('planCard').style.display = 'block';
             if (currentUser.role === 'admin') document.getElementById('btnDeleteMachine').style.display = 'block';
             loadPlans(id);
+            loadSpareDropdown();
         }
     }
 
@@ -590,6 +628,16 @@
         loadMachines();
     };
 
+    async function loadSpareDropdown() {
+        const res = await fetch('/api/spare-parts');
+        const parts = await res.json();
+        const select = document.getElementById('taskSparePart');
+        select.innerHTML = `<option value="">-- เลือกอะไหล่ที่ต้องใช้ (ถ้ามี) --</option>`;
+        parts.forEach(p => {
+            select.innerHTML += `<option value="${p.id}">${p.part_name} (คงเหลือ: ${p.stock_qty})</option>`;
+        });
+    }
+
     async function loadPlans(machineId) {
         const res = await fetch(`/api/plans/${machineId}`);
         const plans = await res.json();
@@ -603,6 +651,7 @@
                     <td class="text-start">${p.task_name}</td>
                     <td>${p.next_due_date ? p.next_due_date.split('T')[0] : ''}</td>
                     <td><small class="badge bg-info text-dark">รอบ ${p.interval_months} ด.</small></td>
+                    <td>${p.spare_part_name ? `<span class="badge bg-info text-dark">📦 ${p.spare_part_name}</span>` : '-'}</td>
                     <td>
                         ${canEdit ? `
                         <select class="form-select form-select-sm" onchange="updatePlanStatus(${p.id}, this.value)">
@@ -625,12 +674,14 @@
         formData.append('task_name', document.getElementById('taskName').value);
         formData.append('next_due_date', document.getElementById('dueDate').value);
         formData.append('interval_months', document.getElementById('intervalMonths').value);
+        formData.append('spare_part_id', document.getElementById('taskSparePart').value);
         formData.append('notes', document.getElementById('taskNotes').value);
         const img = document.getElementById('taskImage').files[0];
         if (img) formData.append('image', img);
 
         await fetch('/api/plans', { method: 'POST', body: formData });
         document.getElementById('taskName').value = '';
+        document.getElementById('taskNotes').value = '';
         loadPlans(currentMachineId);
     };
 
@@ -642,6 +693,7 @@
         });
         if (currentMachineId) loadPlans(currentMachineId);
         loadDashboard();
+        loadSpareParts();
     }
 
     async function deletePlan(id) {
@@ -703,15 +755,20 @@
         const data = await res.json();
         const tbody = document.getElementById('spareTableBody');
         tbody.innerHTML = '';
+        const canEdit = currentUser.role === 'admin' || currentUser.role === 'member';
+
         data.forEach(s => {
             const isLow = s.stock_qty <= s.min_qty;
             tbody.innerHTML += `
                 <tr>
-                    <td class="text-start">${s.part_name}</td>
-                    <td class="fw-bold ${isLow ? 'text-danger' : 'text-success'}">${s.stock_qty}</td>
+                    <td class="text-start fw-bold">${s.part_name}</td>
+                    <td class="fw-bold ${isLow ? 'text-danger' : 'text-success'} fs-5">${s.stock_qty}</td>
                     <td>${s.min_qty}</td>
                     <td>${isLow ? '<span class="badge bg-danger">ใกล้หมด</span>' : '<span class="badge bg-success">ปกติ</span>'}</td>
-                    <td>${currentUser.role === 'admin' ? `<button class="btn btn-sm btn-outline-danger" onclick="deleteSpare(${s.id})">ลบ</button>` : '-'}</td>
+                    <td>
+                        ${canEdit ? `<button class="btn btn-sm btn-outline-primary me-1" onclick="openEditSpareModal(${s.id}, '${s.part_name}', ${s.stock_qty}, ${s.min_qty})">แก้ไข</button>` : ''}
+                        ${currentUser.role === 'admin' ? `<button class="btn btn-sm btn-outline-danger" onclick="deleteSpare(${s.id})">ลบ</button>` : '-'}
+                    </td>
                 </tr>
             `;
         });
@@ -729,13 +786,48 @@
             })
         });
         loadSpareParts();
+        loadSpareDropdown();
         e.target.reset();
     };
+
+    function openEditSpareModal(id, name, qty, min) {
+        document.getElementById('editSpareId').value = id;
+        document.getElementById('editSpareName').value = name;
+        document.getElementById('editSpareQty').value = qty;
+        document.getElementById('editSpareMin').value = min;
+        const modal = new bootstrap.Modal(document.getElementById('editSpareModal'));
+        modal.show();
+    }
+
+    async function submitEditSpare() {
+        const id = document.getElementById('editSpareId').value;
+        const part_name = document.getElementById('editSpareName').value;
+        const stock_qty = document.getElementById('editSpareQty').value;
+        const min_qty = document.getElementById('editSpareMin').value;
+
+        const res = await fetch(`/api/spare-parts/${id}`, {
+            method: 'PUT',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ part_name, stock_qty, min_qty })
+        });
+
+        if (res.ok) {
+            alert('แก้ไขข้อมูลอะไหล่เรียบร้อยแล้ว');
+            const modalEl = document.getElementById('editSpareModal');
+            const modalInstance = bootstrap.Modal.getInstance(modalEl);
+            if (modalInstance) modalInstance.hide();
+            loadSpareParts();
+            loadSpareDropdown();
+            loadDashboard();
+        } else alert('เกิดข้อผิดพลาดในการแก้ไขอะไหล่');
+    }
 
     async function deleteSpare(id) {
         if (confirm('ต้องการลบอะไหล่นี้ใช่หรือไม่?')) {
             await fetch(`/api/spare-parts/${id}`, {method: 'DELETE'});
             loadSpareParts();
+            loadSpareDropdown();
+            loadDashboard();
         }
     }
 </script>

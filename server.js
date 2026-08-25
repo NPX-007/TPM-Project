@@ -44,6 +44,12 @@ async function initDB() {
                 name TEXT NOT NULL,
                 location TEXT NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS spare_parts (
+                id SERIAL PRIMARY KEY,
+                part_name TEXT NOT NULL,
+                stock_qty INT NOT NULL,
+                min_qty INT NOT NULL
+            );
             CREATE TABLE IF NOT EXISTS tpm_plans (
                 id SERIAL PRIMARY KEY,
                 machine_id INT REFERENCES machines(id) ON DELETE CASCADE,
@@ -52,7 +58,8 @@ async function initDB() {
                 interval_months INT NOT NULL,
                 status TEXT DEFAULT 'รอดำเนินการ',
                 notes TEXT,
-                image_url TEXT
+                image_url TEXT,
+                spare_part_id INT REFERENCES spare_parts(id) ON DELETE SET NULL
             );
             CREATE TABLE IF NOT EXISTS breakdowns (
                 id SERIAL PRIMARY KEY,
@@ -63,12 +70,11 @@ async function initDB() {
                 symptom TEXT NOT NULL,
                 cause TEXT NOT NULL
             );
-            CREATE TABLE IF NOT EXISTS spare_parts (
-                id SERIAL PRIMARY KEY,
-                part_name TEXT NOT NULL,
-                stock_qty INT NOT NULL,
-                min_qty INT NOT NULL
-            );
+        `);
+
+        // อัปเดตโครงสร้างตารางเดิมให้รองรับการเชื่อมอะไหล่
+        await pool.query(`
+            ALTER TABLE tpm_plans ADD COLUMN IF NOT EXISTS spare_part_id INT REFERENCES spare_parts(id) ON DELETE SET NULL;
         `);
 
         // สร้าง Admin เริ่มต้น
@@ -127,32 +133,38 @@ app.patch('/api/users/:id/role', async (req, res) => {
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// อัปเดตข้อมูลส่วนตัว (ต้องยืนยันรหัสเดิม + เปลี่ยนชื่อ/รหัสผ่านใหม่)
+// อัปเดตข้อมูลส่วนตัว (เปลี่ยนชื่อได้โดยไม่ต้องเปลี่ยนรหัสผ่าน)
 app.patch('/api/users/profile', async (req, res) => {
     const { userId, oldPassword, newUsername, newPassword } = req.body;
     try {
-        // 1. ตรวจสอบรหัสผ่านเดิม
-        const userCheck = await pool.query('SELECT * FROM users WHERE id = $1 AND password = $2', [userId, oldPassword]);
-        if (userCheck.rows.length === 0) {
-            return res.status(400).json({ success: false, message: 'รหัสผ่านเดิมไม่ถูกต้อง' });
-        }
-
-        // 2. ตรวจสอบว่าชื่อใหม่ซ้ำกับคนอื่นหรือไม่
+        // ตรวจสอบชื่อซ้ำ
         const nameCheck = await pool.query('SELECT * FROM users WHERE username = $1 AND id != $2', [newUsername, userId]);
         if (nameCheck.rows.length > 0) {
             return res.status(400).json({ success: false, message: 'ชื่อผู้ใช้นี้ถูกใช้งานแล้ว' });
         }
 
-        // 3. กำหนดรหัสผ่านใหม่ (หากเว้นว่างไว้ให้ใช้รหัสเดิม)
-        const finalPassword = (newPassword && newPassword.trim() !== '') ? newPassword : oldPassword;
-
-        // 4. บันทึกข้อมูล
-        const updateRes = await pool.query(
-            'UPDATE users SET username = $1, password = $2 WHERE id = $3 RETURNING id, username, role',
-            [newUsername, finalPassword, userId]
-        );
-
-        res.json({ success: true, message: 'อัปเดตข้อมูลส่วนตัวเรียบร้อยแล้ว', user: updateRes.rows[0] });
+        // กรณีมีการระบุรหัสผ่านใหม่ ให้ยืนยันรหัสผ่านเดิมด้วย
+        if (newPassword && newPassword.trim() !== '') {
+            if (!oldPassword) {
+                return res.status(400).json({ success: false, message: 'กรุณากรอกรหัสผ่านเดิมเพื่อเปลี่ยนรหัสผ่านใหม่' });
+            }
+            const userCheck = await pool.query('SELECT * FROM users WHERE id = $1 AND password = $2', [userId, oldPassword]);
+            if (userCheck.rows.length === 0) {
+                return res.status(400).json({ success: false, message: 'รหัสผ่านเดิมไม่ถูกต้อง' });
+            }
+            const updateRes = await pool.query(
+                'UPDATE users SET username = $1, password = $2 WHERE id = $3 RETURNING id, username, role',
+                [newUsername, newPassword, userId]
+            );
+            return res.json({ success: true, message: 'อัปเดตชื่อและรหัสผ่านเรียบร้อยแล้ว', user: updateRes.rows[0] });
+        } else {
+            // กรณีเปลี่ยนเฉพาะชื่อผู้ใช้งาน
+            const updateRes = await pool.query(
+                'UPDATE users SET username = $1 WHERE id = $2 RETURNING id, username, role',
+                [newUsername, userId]
+            );
+            return res.json({ success: true, message: 'อัปเดตชื่อผู้ใช้งานเรียบร้อยแล้ว', user: updateRes.rows[0] });
+        }
     } catch (err) {
         res.status(500).json({ success: false, message: err.message });
     }
@@ -199,7 +211,13 @@ app.delete('/api/machines/:id', async (req, res) => {
 
 app.get('/api/plans/:machineId', async (req, res) => {
     try {
-        const result = await pool.query('SELECT * FROM tpm_plans WHERE machine_id = $1 ORDER BY next_due_date ASC', [req.params.machineId]);
+        const result = await pool.query(`
+            SELECT p.*, sp.part_name as spare_part_name 
+            FROM tpm_plans p 
+            LEFT JOIN spare_parts sp ON p.spare_part_id = sp.id 
+            WHERE p.machine_id = $1 
+            ORDER BY p.next_due_date ASC
+        `, [req.params.machineId]);
         res.json(result.rows);
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
@@ -207,9 +225,10 @@ app.get('/api/plans/:machineId', async (req, res) => {
 app.get('/api/plans-master', async (req, res) => {
     try {
         const result = await pool.query(`
-            SELECT p.*, m.name as machine_name, m.location 
+            SELECT p.*, m.name as machine_name, m.location, sp.part_name as spare_part_name 
             FROM tpm_plans p 
             JOIN machines m ON p.machine_id = m.id 
+            LEFT JOIN spare_parts sp ON p.spare_part_id = sp.id 
             ORDER BY p.next_due_date ASC
         `);
         res.json(result.rows);
@@ -219,9 +238,10 @@ app.get('/api/plans-master', async (req, res) => {
 app.get('/api/plans-overdue', async (req, res) => {
     try {
         const result = await pool.query(`
-            SELECT p.*, m.name as machine_name, m.location 
+            SELECT p.*, m.name as machine_name, m.location, sp.part_name as spare_part_name 
             FROM tpm_plans p 
             JOIN machines m ON p.machine_id = m.id 
+            LEFT JOIN spare_parts sp ON p.spare_part_id = sp.id 
             WHERE p.status != 'เสร็จสิ้น' AND p.next_due_date < CURRENT_DATE 
             ORDER BY p.next_due_date ASC
         `);
@@ -232,9 +252,10 @@ app.get('/api/plans-overdue', async (req, res) => {
 app.get('/api/plans-history', async (req, res) => {
     try {
         const result = await pool.query(`
-            SELECT p.*, m.name as machine_name, m.location 
+            SELECT p.*, m.name as machine_name, m.location, sp.part_name as spare_part_name 
             FROM tpm_plans p 
             JOIN machines m ON p.machine_id = m.id 
+            LEFT JOIN spare_parts sp ON p.spare_part_id = sp.id 
             WHERE p.status = 'เสร็จสิ้น' 
             ORDER BY p.next_due_date DESC
         `);
@@ -243,20 +264,31 @@ app.get('/api/plans-history', async (req, res) => {
 });
 
 app.post('/api/plans', upload.single('image'), async (req, res) => {
-    const { machine_id, task_name, next_due_date, interval_months, notes } = req.body;
+    const { machine_id, task_name, next_due_date, interval_months, notes, spare_part_id } = req.body;
     let imageUrl = req.file ? `data:${req.file.mimetype};base64,${req.file.buffer.toString('base64')}` : null;
+    const spId = (spare_part_id && spare_part_id !== '') ? parseInt(spare_part_id) : null;
     try {
         await pool.query(
-            'INSERT INTO tpm_plans (machine_id, task_name, next_due_date, interval_months, notes, image_url) VALUES ($1, $2, $3, $4, $5, $6)',
-            [machine_id, task_name, next_due_date, interval_months, notes, imageUrl]
+            'INSERT INTO tpm_plans (machine_id, task_name, next_due_date, interval_months, notes, image_url, spare_part_id) VALUES ($1, $2, $3, $4, $5, $6, $7)',
+            [machine_id, task_name, next_due_date, interval_months, notes, imageUrl, spId]
         );
         res.json({ success: true });
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 app.patch('/api/plans/:id/status', async (req, res) => {
+    const { status } = req.body;
     try {
-        await pool.query('UPDATE tpm_plans SET status = $1 WHERE id = $2', [req.body.status, req.params.id]);
+        const oldPlan = await pool.query('SELECT * FROM tpm_plans WHERE id = $1', [req.params.id]);
+        await pool.query('UPDATE tpm_plans SET status = $1 WHERE id = $2', [status, req.params.id]);
+
+        // หากปรับสถานะเป็น 'เสร็จสิ้น' ให้ตัดสต็อกอะไหล่ 1 ชิ้นอัตโนมัติ
+        if (status === 'เสร็จสิ้น' && oldPlan.rows.length > 0 && oldPlan.rows[0].status !== 'เสร็จสิ้น') {
+            const spId = oldPlan.rows[0].spare_part_id;
+            if (spId) {
+                await pool.query('UPDATE spare_parts SET stock_qty = GREATEST(0, stock_qty - 1) WHERE id = $1', [spId]);
+            }
+        }
         res.json({ success: true });
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
@@ -298,6 +330,8 @@ app.delete('/api/breakdowns/:id', async (req, res) => {
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// --- API จัดการคลังอะไหล่ ---
+
 app.get('/api/spare-parts', async (req, res) => {
     try {
         const result = await pool.query('SELECT * FROM spare_parts ORDER BY id DESC');
@@ -309,6 +343,17 @@ app.post('/api/spare-parts', async (req, res) => {
     const { part_name, stock_qty, min_qty } = req.body;
     try {
         await pool.query('INSERT INTO spare_parts (part_name, stock_qty, min_qty) VALUES ($1, $2, $3)', [part_name, stock_qty, min_qty]);
+        res.json({ success: true });
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.put('/api/spare-parts/:id', async (req, res) => {
+    const { part_name, stock_qty, min_qty } = req.body;
+    try {
+        await pool.query(
+            'UPDATE spare_parts SET part_name = $1, stock_qty = $2, min_qty = $3 WHERE id = $4',
+            [part_name, parseInt(stock_qty), parseInt(min_qty), req.params.id]
+        );
         res.json({ success: true });
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
