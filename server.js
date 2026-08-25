@@ -28,17 +28,21 @@ const storage = multer.diskStorage({
 });
 const upload = multer({ storage });
 
-// เชื่อมต่อฐานข้อมูล MySQL (รองรับทั้ง Environment Variables บน Cloud และ Localhost)
-const db = mysql.createPool({
-    host: process.env.DB_HOST || 'localhost',
-    user: process.env.DB_USER || 'root',
-    password: process.env.DB_PASSWORD || '',
-    database: process.env.DB_NAME || 'tpm_cmms_db',
-    port: process.env.DB_PORT ? parseInt(process.env.DB_PORT) : 3306,
-    waitForConnections: true,
-    connectionLimit: 10,
-    queueLimit: 0
-});
+// เชื่อมต่อฐานข้อมูล MySQL (รองรับทั้ง DATABASE_URL บน Cloud และ Localhost)
+const dbPoolConfig = process.env.DATABASE_URL 
+    ? process.env.DATABASE_URL 
+    : {
+        host: process.env.DB_HOST || 'localhost',
+        user: process.env.DB_USER || 'root',
+        password: process.env.DB_PASSWORD || '',
+        database: process.env.DB_NAME || 'tpm_cmms_db',
+        port: process.env.DB_PORT ? parseInt(process.env.DB_PORT) : 3306,
+        waitForConnections: true,
+        connectionLimit: 10,
+        queueLimit: 0
+    };
+
+const db = mysql.createPool(dbPoolConfig);
 
 // ====================================================
 // 1. AUTHENTICATION & USER MANAGEMENT API
