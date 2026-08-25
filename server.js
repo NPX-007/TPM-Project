@@ -4,23 +4,24 @@ const dns = require('dns');
 const path = require('path');
 const multer = require('multer');
 
-// บังคับให้ Node.js ใช้ IPv4 เป็นอันดับแรกสำหรับทุกการเชื่อมต่อเน็ตเวิร์ก
-if (dns.setDefaultResultOrder) {
-    dns.setDefaultResultOrder('ipv4first');
-}
+// บังคับระดับ Low-level DNS ให้คืนค่าเฉพาะ IPv4 เท่านั้น (แก้ปัญหา pg บน Render)
+const originalLookup = dns.lookup;
+dns.lookup = (hostname, options, callback) => {
+    if (typeof options === 'function') {
+        callback = options;
+        options = {};
+    }
+    const newOptions = Object.assign({}, typeof options === 'object' ? options : { family: options }, { family: 4 });
+    return originalLookup(hostname, newOptions, callback);
+};
 
 const app = express();
 const port = process.env.PORT || 3000;
 
-// แก้ไข URL ของฐานข้อมูลเพื่อตัดปัญหา IPv6 บน Render (แปลง localhost หรือบางโฮสต์หากจำเป็น หรือใช้ connectionString ตรงๆ พร้อมย้ายค่า config)
-let connectionString = process.env.DATABASE_URL;
-
-const poolConfig = connectionString ? {
-    connectionString: connectionString,
-    ssl: { rejectUnauthorized: false }
-} : {};
-
-const pool = new Pool(poolConfig);
+const pool = new Pool({
+    connectionString: process.env.DATABASE_URL,
+    ssl: process.env.DATABASE_URL ? { rejectUnauthorized: false } : false
+});
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
@@ -142,6 +143,15 @@ app.post('/api/machines', async (req, res) => {
     }
 });
 
+app.delete('/api/machines/:id', async (req, res) => {
+    try {
+        await pool.query('DELETE FROM machines WHERE id = $1', [req.params.id]);
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
 // API Plans
 app.get('/api/plans/:machineId', async (req, res) => {
     try {
@@ -172,6 +182,15 @@ app.post('/api/plans', upload.single('image'), async (req, res) => {
 app.patch('/api/plans/:id/status', async (req, res) => {
     try {
         await pool.query('UPDATE tpm_plans SET status = $1 WHERE id = $2', [req.body.status, req.params.id]);
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.delete('/api/plans/:id', async (req, res) => {
+    try {
+        await pool.query('DELETE FROM tpm_plans WHERE id = $1', [req.params.id]);
         res.json({ success: true });
     } catch (err) {
         res.status(500).json({ error: err.message });

@@ -115,8 +115,7 @@
                         <select id="machineDropdown" class="form-select form-select-lg border-primary fw-bold text-dark mb-3" onchange="onMachineDropdownChange(this.value)">
                             <option value="">-- กรุณาเลือกเครื่องจักร --</option>
                         </select>
-                        <div id="selectedMachineActionBtns" class="d-flex gap-2 mb-4" style="display: none !important;">
-                            <button class="btn btn-outline-primary btn-sm flex-fill admin-only" onclick="openEditCurrentMachine()">✏️ แก้ไขเครื่องนี้</button>
+                        <div id="selectedMachineActionBtns" class="d-flex gap-2 mb-4" style="display: none;">
                             <button class="btn btn-outline-danger btn-sm flex-fill admin-only" onclick="deleteCurrentMachine()">🗑️ ลบเครื่องนี้</button>
                         </div>
                         <hr class="admin-only">
@@ -307,6 +306,15 @@
     let machinesData = [];
     let pieChartInstance = null;
 
+    // ตรวจสอบการ Login ค้างไว้เมื่อเปิดเว็บ
+    window.onload = () => {
+        const savedUser = localStorage.getItem('user');
+        if (savedUser) {
+            const user = JSON.parse(savedUser);
+            initSession(user);
+        }
+    };
+
     document.getElementById('loginForm').onsubmit = async (e) => {
         e.preventDefault();
         const username = document.getElementById('loginUser').value;
@@ -318,23 +326,31 @@
         });
         const result = await res.json();
         if (result.success) {
-            currentUser = result.username;
-            currentRole = result.role;
-            document.getElementById('loginOverlay').style.display = 'none';
-            document.getElementById('mainApp').style.display = 'block';
-            document.getElementById('userBadge').innerText = `ผู้ใช้: ${currentUser} (${currentRole})`;
-            
-            if (currentRole !== 'admin') {
-                document.querySelectorAll('.admin-only').forEach(el => el.style.display = 'none');
-            }
-            loadMachines();
-            loadDashboard();
+            localStorage.setItem('user', JSON.stringify(result.user));
+            initSession(result.user);
         } else {
             alert(result.message);
         }
     };
 
+    function initSession(user) {
+        currentUser = user.username;
+        currentRole = user.role;
+        document.getElementById('loginOverlay').style.display = 'none';
+        document.getElementById('mainApp').style.display = 'block';
+        document.getElementById('userBadge').innerText = `ผู้ใช้: ${currentUser} (${currentRole})`;
+        
+        if (currentRole !== 'admin') {
+            document.querySelectorAll('.admin-only').forEach(el => el.style.display = 'none');
+        } else {
+            document.querySelectorAll('.admin-only').forEach(el => el.style.display = 'block');
+        }
+        loadMachines();
+        loadDashboard();
+    }
+
     function logout() {
+        localStorage.removeItem('user');
         location.reload();
     }
 
@@ -381,6 +397,7 @@
         if (!id) {
             currentMachineId = null;
             document.getElementById('planCard').style.display = 'none';
+            document.getElementById('selectedMachineActionBtns').style.display = 'none';
             return;
         }
         currentMachineId = id;
@@ -389,6 +406,9 @@
             document.getElementById('selectedMachineTitle').innerText = `เครื่อง: ${found.name}`;
             document.getElementById('selectedMachineLoc').innerText = `ตำแหน่ง: ${found.location}`;
             document.getElementById('planCard').style.display = 'block';
+            if (currentRole === 'admin') {
+                document.getElementById('selectedMachineActionBtns').style.display = 'flex';
+            }
             loadPlans(id);
         }
     }
@@ -405,6 +425,17 @@
         loadMachines();
     };
 
+    async function deleteCurrentMachine() {
+        if (!currentMachineId) return;
+        if (confirm('คุณต้องการลบเครื่องจักรนี้พร้อมแผนงานทั้งหมดใช่หรือไม่?')) {
+            await fetch(`/api/machines/${currentMachineId}`, { method: 'DELETE' });
+            currentMachineId = null;
+            document.getElementById('planCard').style.display = 'none';
+            document.getElementById('selectedMachineActionBtns').style.display = 'none';
+            loadMachines();
+        }
+    }
+
     async function loadPlans(machineId) {
         const res = await fetch(`/api/plans/${machineId}`);
         const plans = await res.json();
@@ -415,7 +446,7 @@
                 <tr>
                     <td><span class="color-block bg-gray"></span></td>
                     <td class="text-start">${p.task_name}</td>
-                    <td>${p.next_due_date}</td>
+                    <td>${p.next_due_date ? p.next_due_date.split('T')[0] : ''}</td>
                     <td><small class="badge bg-info text-dark">รอบ ${p.interval_months} ด.</small></td>
                     <td>
                         <select class="form-select form-select-sm" onchange="updatePlanStatus(${p.id}, this.value)">
@@ -458,6 +489,14 @@
         loadDashboard();
     }
 
+    async function deletePlan(id) {
+        if(confirm('ต้องการลบแผนงานนี้ใช่หรือไม่?')) {
+            await fetch(`/api/plans/${id}`, { method: 'DELETE' });
+            if(currentMachineId) loadPlans(currentMachineId);
+            loadDashboard();
+        }
+    }
+
     // --- Breakdowns ---
     async function loadBreakdowns() {
         const res = await fetch('/api/breakdowns');
@@ -467,7 +506,7 @@
         data.forEach(b => {
             tbody.innerHTML += `
                 <tr>
-                    <td>${b.breakdown_date}</td>
+                    <td>${b.breakdown_date ? b.breakdown_date.split('T')[0] : ''}</td>
                     <td class="text-start">${b.machine_name}</td>
                     <td class="text-start">${b.symptom}</td>
                     <td class="text-start">${b.cause}</td>
