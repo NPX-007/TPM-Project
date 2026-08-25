@@ -175,7 +175,6 @@
                     </div>
                 </div>
 
-                <!-- เครื่องมือเลือกรายการสำหรับดาวน์โหลด -->
                 <div class="bg-light p-3 rounded mb-3 border">
                     <div class="d-flex align-items-center flex-wrap gap-2">
                         <span class="fw-bold text-secondary">เลือกลัดสำหรับดาวน์โหลด:</span>
@@ -380,9 +379,26 @@
     let machinesData = [];
     let pieChartInstance = null;
 
+    // Helper ในการหลีกเลี่ยง XSS
+    function escapeHtml(str) {
+        if (!str && str !== 0) return '';
+        return String(str)
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/"/g, "&quot;")
+            .replace(/'/g, "&#039;");
+    }
+
     window.onload = () => {
         const savedUser = localStorage.getItem('user');
-        if (savedUser) initSession(JSON.parse(savedUser));
+        if (savedUser) {
+            try {
+                initSession(JSON.parse(savedUser));
+            } catch (e) {
+                localStorage.removeItem('user');
+            }
+        }
     };
 
     function switchAuthMode(mode) {
@@ -400,28 +416,36 @@
 
     document.getElementById('loginForm').onsubmit = async (e) => {
         e.preventDefault();
-        const res = await fetch('/api/login', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({username: document.getElementById('loginUser').value, password: document.getElementById('loginPass').value})
-        });
-        const result = await res.json();
-        if (result.success) {
-            localStorage.setItem('user', JSON.stringify(result.user));
-            initSession(result.user);
-        } else alert(result.message);
+        try {
+            const res = await fetch('/api/login', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({username: document.getElementById('loginUser').value, password: document.getElementById('loginPass').value})
+            });
+            const result = await res.json();
+            if (result.success) {
+                localStorage.setItem('user', JSON.stringify(result.user));
+                initSession(result.user);
+            } else alert(result.message || 'เข้าสู่ระบบไม่สำเร็จ');
+        } catch (err) {
+            alert('ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้');
+        }
     };
 
     document.getElementById('registerForm').onsubmit = async (e) => {
         e.preventDefault();
-        const res = await fetch('/api/register', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({username: document.getElementById('regUser').value, password: document.getElementById('regPass').value})
-        });
-        const result = await res.json();
-        alert(result.message);
-        if (result.success) switchAuthMode('login');
+        try {
+            const res = await fetch('/api/register', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({username: document.getElementById('regUser').value, password: document.getElementById('regPass').value})
+            });
+            const result = await res.json();
+            alert(result.message);
+            if (result.success) switchAuthMode('login');
+        } catch (err) {
+            alert('เกิดข้อผิดพลาดในการลงทะเบียน');
+        }
     };
 
     function initSession(user) {
@@ -462,70 +486,77 @@
 
         if (!newUsername) return alert('กรุณากรอกชื่อผู้ใช้งาน');
 
-        const res = await fetch('/api/users/profile', {
-            method: 'PATCH',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({
-                userId: currentUser.id,
-                oldPassword: oldPassword,
-                newUsername: newUsername,
-                newPassword: newPassword
-            })
-        });
+        try {
+            const res = await fetch('/api/users/profile', {
+                method: 'PATCH',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    userId: currentUser.id,
+                    oldPassword: oldPassword,
+                    newUsername: newUsername,
+                    newPassword: newPassword
+                })
+            });
 
-        const result = await res.json();
-        if (result.success) {
-            alert(result.message);
-            currentUser = result.user;
-            localStorage.setItem('user', JSON.stringify(currentUser));
-            document.getElementById('userBadge').innerText = `${currentUser.username} (${currentUser.role.toUpperCase()})`;
-            
-            const modalEl = document.getElementById('profileModal');
-            const modalInstance = bootstrap.Modal.getInstance(modalEl);
-            if (modalInstance) modalInstance.hide();
-        } else {
-            alert(result.message);
+            const result = await res.json();
+            if (result.success) {
+                alert(result.message);
+                currentUser = result.user;
+                localStorage.setItem('user', JSON.stringify(currentUser));
+                document.getElementById('userBadge').innerText = `${currentUser.username} (${currentUser.role.toUpperCase()})`;
+                
+                const modalEl = document.getElementById('profileModal');
+                const modalInstance = bootstrap.Modal.getInstance(modalEl);
+                if (modalInstance) modalInstance.hide();
+            } else {
+                alert(result.message);
+            }
+        } catch (err) {
+            alert('เกิดข้อผิดพลาดในการเชื่อมต่อเซิร์ฟเวอร์');
         }
     }
 
     // --- Master Plan / Overdue / History ---
 
     async function loadMasterPlan() {
-        const res = await fetch('/api/plans-master');
-        const plans = await res.json();
-        const tbody = document.getElementById('masterTableBody');
-        tbody.innerHTML = '';
-        const today = new Date().toISOString().split('T')[0];
-        const canEdit = currentUser && (currentUser.role === 'admin' || currentUser.role === 'member');
+        try {
+            const res = await fetch('/api/plans-master');
+            const plans = await res.json();
+            const tbody = document.getElementById('masterTableBody');
+            const today = new Date().toISOString().split('T')[0];
+            const canEdit = currentUser && (currentUser.role === 'admin' || currentUser.role === 'member');
 
-        plans.forEach(p => {
-            const dueDate = p.next_due_date ? p.next_due_date.split('T')[0] : '';
-            let colorClass = 'bg-yellow';
-            if (p.status === 'เสร็จสิ้น') colorClass = 'bg-green';
-            else if (dueDate < today) colorClass = 'bg-red';
+            tbody.innerHTML = plans.map(p => {
+                const dueDate = p.next_due_date ? p.next_due_date.split('T')[0] : '';
+                let colorClass = 'bg-yellow';
+                if (p.status === 'เสร็จสิ้น') colorClass = 'bg-green';
+                else if (dueDate < today) colorClass = 'bg-red';
 
-            tbody.innerHTML += `
-                <tr data-due="${dueDate}">
-                    <td><input type="checkbox" class="master-cb"></td>
-                    <td><span class="color-block ${colorClass}"></span></td>
-                    <td>${dueDate}</td>
-                    <td><strong>${p.machine_name}</strong> (${p.location})</td>
-                    <td class="text-start">${p.task_name}</td>
-                    <td><small class="badge bg-info text-dark">รอบ ${p.interval_months} ด.</small></td>
-                    <td>${p.spare_part_name ? `<span class="badge bg-info text-dark">📦 ${p.spare_part_name}</span>` : '-'}</td>
-                    <td>
-                        ${canEdit ? `
-                        <select class="form-select form-select-sm" onchange="updatePlanStatus(${p.id}, this.value)">
-                            <option value="รอดำเนินการ" ${p.status === 'รอดำเนินการ' ? 'selected' : ''}>รอดำเนินการ</option>
-                            <option value="รออะไหล่" ${p.status === 'รออะไหล่' ? 'selected' : ''}>รออะไหล่</option>
-                            <option value="เสร็จสิ้น" ${p.status === 'เสร็จสิ้น' ? 'selected' : ''}>เสร็จสิ้น</option>
-                        </select>` : `<span class="badge ${p.status === 'เสร็จสิ้น' ? 'bg-success' : 'bg-warning text-dark'}">${p.status}</span>`}
-                    </td>
-                    <td class="text-start">${p.notes || '-'}</td>
-                    <td>${p.image_url ? `<img src="${p.image_url}" class="thumb-img" onclick="window.open(this.src)">` : '-'}</td>
-                </tr>
-            `;
-        });
+                return `
+                    <tr data-due="${dueDate}">
+                        <td><input type="checkbox" class="master-cb"></td>
+                        <td><span class="color-block ${colorClass}"></span></td>
+                        <td>${dueDate}</td>
+                        <td><strong>${escapeHtml(p.machine_name)}</strong> (${escapeHtml(p.location)})</td>
+                        <td class="text-start">${escapeHtml(p.task_name)}</td>
+                        <td><small class="badge bg-info text-dark">รอบ ${p.interval_months} ด.</small></td>
+                        <td>${p.spare_part_name ? `<span class="badge bg-info text-dark">📦 ${escapeHtml(p.spare_part_name)}</span>` : '-'}</td>
+                        <td>
+                            ${canEdit ? `
+                            <select class="form-select form-select-sm" onchange="updatePlanStatus(${p.id}, this.value)">
+                                <option value="รอดำเนินการ" ${p.status === 'รอดำเนินการ' ? 'selected' : ''}>รอดำเนินการ</option>
+                                <option value="รออะไหล่" ${p.status === 'รออะไหล่' ? 'selected' : ''}>รออะไหล่</option>
+                                <option value="เสร็จสิ้น" ${p.status === 'เสร็จสิ้น' ? 'selected' : ''}>เสร็จสิ้น</option>
+                            </select>` : `<span class="badge ${p.status === 'เสร็จสิ้น' ? 'bg-success' : 'bg-warning text-dark'}">${escapeHtml(p.status)}</span>`}
+                        </td>
+                        <td class="text-start">${escapeHtml(p.notes) || '-'}</td>
+                        <td>${p.image_url ? `<img src="${escapeHtml(p.image_url)}" class="thumb-img" onclick="window.open(this.src)">` : '-'}</td>
+                    </tr>
+                `;
+            }).join('');
+        } catch (err) {
+            console.error('Failed to load master plan:', err);
+        }
     }
 
     function toggleSelectAllMaster(checked) {
@@ -557,8 +588,7 @@
             return alert('กรุณาติ๊กเลือกรายการที่ต้องการดาวน์โหลดก่อนครับ');
         }
 
-        const data = [];
-        data.push(["วันที่กำหนด", "เครื่องจักร", "ชื่องาน", "รอบซ้ำ (เดือน)", "อะไหล่ที่ใช้", "สถานะ", "หมายเหตุ"]);
+        const data = [["วันที่กำหนด", "เครื่องจักร", "ชื่องาน", "รอบซ้ำ (เดือน)", "อะไหล่ที่ใช้", "สถานะ", "หมายเหตุ"]];
 
         checkedRows.forEach(cb => {
             const tr = cb.closest('tr');
@@ -617,14 +647,14 @@
             const tr = cb.closest('tr');
             const cols = tr.children;
 
-            const dueDate = cols[2].innerText;
-            const machine = cols[3].innerText;
-            const task = cols[4].innerText;
+            const dueDate = escapeHtml(cols[2].innerText);
+            const machine = escapeHtml(cols[3].innerText);
+            const task = escapeHtml(cols[4].innerText);
             const statusEl = cols[7].querySelector('select');
-            const status = statusEl ? statusEl.value : cols[7].innerText.trim();
-            const notes = cols[8].innerText;
+            const status = escapeHtml(statusEl ? statusEl.value : cols[7].innerText.trim());
+            const notes = escapeHtml(cols[8].innerText);
             const imgEl = cols[9].querySelector('img');
-            const imgHtml = imgEl ? `<img src="${imgEl.src}" style="width: 35px; height: 35px; object-fit: cover; border-radius: 4px;">` : '-';
+            const imgHtml = imgEl ? `<img src="${escapeHtml(imgEl.src)}" style="width: 35px; height: 35px; object-fit: cover; border-radius: 4px;">` : '-';
 
             tableHtml += `
                 <tr>
@@ -656,52 +686,56 @@
     }
 
     async function loadOverduePlan() {
-        const res = await fetch('/api/plans-overdue');
-        const plans = await res.json();
-        const tbody = document.getElementById('overdueTableBody');
-        tbody.innerHTML = '';
+        try {
+            const res = await fetch('/api/plans-overdue');
+            const plans = await res.json();
+            const tbody = document.getElementById('overdueTableBody');
 
-        plans.forEach(p => {
-            tbody.innerHTML += `
+            tbody.innerHTML = plans.map(p => `
                 <tr>
                     <td class="fw-bold text-danger">${p.next_due_date ? p.next_due_date.split('T')[0] : ''}</td>
-                    <td><strong>${p.machine_name}</strong></td>
-                    <td class="text-start">${p.task_name}</td>
+                    <td><strong>${escapeHtml(p.machine_name)}</strong></td>
+                    <td class="text-start">${escapeHtml(p.task_name)}</td>
                     <td><small class="badge bg-info text-dark">รอบ ${p.interval_months} ด.</small></td>
-                    <td>${p.spare_part_name ? `<span class="badge bg-info text-dark">📦 ${p.spare_part_name}</span>` : '-'}</td>
-                    <td><span class="badge bg-danger">${p.status}</span></td>
-                    <td class="text-start">${p.notes || '-'}</td>
-                    <td>${p.image_url ? `<img src="${p.image_url}" class="thumb-img" onclick="window.open(this.src)">` : '-'}</td>
+                    <td>${p.spare_part_name ? `<span class="badge bg-info text-dark">📦 ${escapeHtml(p.spare_part_name)}</span>` : '-'}</td>
+                    <td><span class="badge bg-danger">${escapeHtml(p.status)}</span></td>
+                    <td class="text-start">${escapeHtml(p.notes) || '-'}</td>
+                    <td>${p.image_url ? `<img src="${escapeHtml(p.image_url)}" class="thumb-img" onclick="window.open(this.src)">` : '-'}</td>
                 </tr>
-            `;
-        });
+            `).join('');
+        } catch (err) {
+            console.error('Failed to load overdue plan:', err);
+        }
     }
 
     async function loadHistoryPlan() {
-        const res = await fetch('/api/plans-history');
-        const plans = await res.json();
-        const tbody = document.getElementById('historyTableBody');
-        tbody.innerHTML = '';
+        try {
+            const res = await fetch('/api/plans-history');
+            const plans = await res.json();
+            const tbody = document.getElementById('historyTableBody');
 
-        const selectAllCb = document.getElementById('selectAllHistoryCb');
-        if (selectAllCb) selectAllCb.checked = false;
+            const selectAllCb = document.getElementById('selectAllHistoryCb');
+            if (selectAllCb) selectAllCb.checked = false;
 
-        plans.forEach(p => {
-            const actualDate = p.actual_date ? p.actual_date.split('T')[0] : '-';
-            tbody.innerHTML += `
-                <tr>
-                    <td><input type="checkbox" class="history-cb" value="${p.id}"></td>
-                    <td>${p.next_due_date ? p.next_due_date.split('T')[0] : ''}</td>
-                    <td><span class="badge bg-success">${actualDate}</span></td>
-                    <td><strong>${p.machine_name}</strong></td>
-                    <td class="text-start">${p.task_name}</td>
-                    <td><small class="badge bg-info text-dark">รอบ ${p.interval_months} ด.</small></td>
-                    <td>${p.spare_part_name ? `<span class="badge bg-info text-dark">📦 ${p.spare_part_name}</span>` : '-'}</td>
-                    <td class="text-start">${p.notes || '-'}</td>
-                    <td>${p.image_url ? `<img src="${p.image_url}" class="thumb-img" onclick="window.open(this.src)">` : '-'}</td>
-                </tr>
-            `;
-        });
+            tbody.innerHTML = plans.map(p => {
+                const actualDate = p.actual_date ? p.actual_date.split('T')[0] : '-';
+                return `
+                    <tr>
+                        <td><input type="checkbox" class="history-cb" value="${p.id}"></td>
+                        <td>${p.next_due_date ? p.next_due_date.split('T')[0] : ''}</td>
+                        <td><span class="badge bg-success">${actualDate}</span></td>
+                        <td><strong>${escapeHtml(p.machine_name)}</strong></td>
+                        <td class="text-start">${escapeHtml(p.task_name)}</td>
+                        <td><small class="badge bg-info text-dark">รอบ ${p.interval_months} ด.</small></td>
+                        <td>${p.spare_part_name ? `<span class="badge bg-info text-dark">📦 ${escapeHtml(p.spare_part_name)}</span>` : '-'}</td>
+                        <td class="text-start">${escapeHtml(p.notes) || '-'}</td>
+                        <td>${p.image_url ? `<img src="${escapeHtml(p.image_url)}" class="thumb-img" onclick="window.open(this.src)">` : '-'}</td>
+                    </tr>
+                `;
+            }).join('');
+        } catch (err) {
+            console.error('Failed to load history:', err);
+        }
     }
 
     function toggleSelectAllHistory(checked) {
@@ -743,36 +777,39 @@
     // --- ส่วนการจัดการสมาชิกและสิทธิ์ (Admin Only) ---
 
     async function loadUserManagement() {
-        if (currentUser.role !== 'admin') return;
-        const res = await fetch('/api/users');
-        const users = await res.json();
-        const tbody = document.getElementById('userTableBody');
-        tbody.innerHTML = '';
-        
-        users.forEach(u => {
-            const pwdText = (u.password !== undefined && u.password !== null && u.password !== '') ? u.password : '(ไม่มีข้อมูลใน DB)';
-            tbody.innerHTML += `
-                <tr>
-                    <td>${u.id}</td>
-                    <td class="fw-bold">${u.username}</td>
-                    <td>
-                        <span id="pwdDisplay-${u.id}" class="font-monospace">••••••••</span>
-                        <button class="btn btn-sm btn-link p-0 ms-1 text-decoration-none" title="ดู/ซ่อนรหัสผ่าน" onclick="togglePasswordVisibility(${u.id}, '${pwdText}')">👁️</button>
-                    </td>
-                    <td><span class="badge ${u.role === 'admin' ? 'bg-danger' : u.role === 'member' ? 'bg-success' : 'bg-secondary'}">${u.role}</span></td>
-                    <td>
-                        <select class="form-select form-select-sm w-auto mx-auto" onchange="changeUserRole(${u.id}, this.value)">
-                            <option value="user" ${u.role === 'user' ? 'selected' : ''}>User (ดูได้อย่างเดียว)</option>
-                            <option value="member" ${u.role === 'member' ? 'selected' : ''}>Member (จัดการข้อมูลได้)</option>
-                            <option value="admin" ${u.role === 'admin' ? 'selected' : ''}>Admin (สิทธิ์สูงสุด)</option>
-                        </select>
-                    </td>
-                    <td>
-                        ${u.id !== currentUser.id ? `<button class="btn btn-sm btn-outline-danger fw-bold" onclick="deleteUserAccount(${u.id}, '${u.username}')">🗑️ ลบบัญชี</button>` : '<span class="text-muted small">บัญชีปัจจุบัน</span>'}
-                    </td>
-                </tr>
-            `;
-        });
+        if (!currentUser || currentUser.role !== 'admin') return;
+        try {
+            const res = await fetch('/api/users');
+            const users = await res.json();
+            const tbody = document.getElementById('userTableBody');
+
+            tbody.innerHTML = users.map(u => {
+                const pwdText = (u.password !== undefined && u.password !== null && u.password !== '') ? String(u.password) : '(ไม่มีข้อมูลใน DB)';
+                return `
+                    <tr>
+                        <td>${u.id}</td>
+                        <td class="fw-bold">${escapeHtml(u.username)}</td>
+                        <td>
+                            <span id="pwdDisplay-${u.id}" class="font-monospace">••••••••</span>
+                            <button class="btn btn-sm btn-link p-0 ms-1 text-decoration-none" title="ดู/ซ่อนรหัสผ่าน" onclick="togglePasswordVisibility(${u.id}, \`${escapeHtml(pwdText)}\`)">👁️</button>
+                        </td>
+                        <td><span class="badge ${u.role === 'admin' ? 'bg-danger' : u.role === 'member' ? 'bg-success' : 'bg-secondary'}">${escapeHtml(u.role)}</span></td>
+                        <td>
+                            <select class="form-select form-select-sm w-auto mx-auto" onchange="changeUserRole(${u.id}, this.value)">
+                                <option value="user" ${u.role === 'user' ? 'selected' : ''}>User (ดูได้อย่างเดียว)</option>
+                                <option value="member" ${u.role === 'member' ? 'selected' : ''}>Member (จัดการข้อมูลได้)</option>
+                                <option value="admin" ${u.role === 'admin' ? 'selected' : ''}>Admin (สิทธิ์สูงสุด)</option>
+                            </select>
+                        </td>
+                        <td>
+                            ${u.id !== currentUser.id ? `<button class="btn btn-sm btn-outline-danger fw-bold" onclick="deleteUserAccount(${u.id}, \`${escapeHtml(u.username)}\`)">🗑️ ลบบัญชี</button>` : '<span class="text-muted small">บัญชีปัจจุบัน</span>'}
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+        } catch (err) {
+            console.error('Failed to load users:', err);
+        }
     }
 
     function togglePasswordVisibility(userId, plainPassword) {
@@ -786,7 +823,7 @@
     }
 
     async function deleteUserAccount(userId, username) {
-        if (userId === currentUser.id) {
+        if (currentUser && userId === currentUser.id) {
             return alert('ไม่สามารถลบบัญชีผู้ใช้ที่กำลังเข้าสู่ระบบอยู่ได้');
         }
 
@@ -807,51 +844,71 @@
     }
 
     async function changeUserRole(userId, newRole) {
-        await fetch(`/api/users/${userId}/role`, {
-            method: 'PATCH',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({ role: newRole })
-        });
-        alert('อัปเดตสิทธิ์เรียบร้อยแล้ว');
-        loadUserManagement();
+        try {
+            await fetch(`/api/users/${userId}/role`, {
+                method: 'PATCH',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ role: newRole })
+            });
+            alert('อัปเดตสิทธิ์เรียบร้อยแล้ว');
+            loadUserManagement();
+        } catch (err) {
+            alert('ไม่สามารถอัปเดตสิทธิ์ได้');
+        }
     }
 
     // --- ส่วนการจัดการระบบทั่วไป ---
 
     async function loadDashboard() {
-        const res = await fetch('/api/dashboard-summary');
-        const data = await res.json();
-        document.getElementById('dashDowntime').innerText = `${data.downtime} ชม.`;
-        document.getElementById('dashCost').innerText = `${data.repairCost.toLocaleString()} บาท`;
-        document.getElementById('dashLowStock').innerText = `${data.lowStockCount} รายการ`;
+        try {
+            const res = await fetch('/api/dashboard-summary');
+            const data = await res.json();
+            document.getElementById('dashDowntime').innerText = `${data.downtime || 0} ชม.`;
+            document.getElementById('dashCost').innerText = `${(data.repairCost || 0).toLocaleString()} บาท`;
+            document.getElementById('dashLowStock').innerText = `${data.lowStockCount || 0} รายการ`;
 
-        let pending = 0, waiting = 0, completed = 0;
-        data.plans.forEach(p => {
-            if (p.status === 'รอดำเนินการ') pending = parseInt(p.count);
-            if (p.status === 'รออะไหล่') waiting = parseInt(p.count);
-            if (p.status === 'เสร็จสิ้น') completed = parseInt(p.count);
-        });
+            let pending = 0, waiting = 0, completed = 0;
+            if (Array.isArray(data.plans)) {
+                data.plans.forEach(p => {
+                    if (p.status === 'รอดำเนินการ') pending = parseInt(p.count);
+                    if (p.status === 'รออะไหล่') waiting = parseInt(p.count);
+                    if (p.status === 'เสร็จสิ้น') completed = parseInt(p.count);
+                });
+            }
 
-        const ctx = document.getElementById('tpmPieChart').getContext('2d');
-        if (pieChartInstance) pieChartInstance.destroy();
-        pieChartInstance = new Chart(ctx, {
-            type: 'doughnut',
-            data: { labels: ['รอดำเนินการ', 'รออะไหล่', 'เสร็จสิ้น'], datasets: [{ data: [pending, waiting, completed], backgroundColor: ['#ffc107', '#dc3545', '#198754'] }] }
-        });
+            const ctx = document.getElementById('tpmPieChart').getContext('2d');
+            if (pieChartInstance) pieChartInstance.destroy();
+            pieChartInstance = new Chart(ctx, {
+                type: 'doughnut',
+                data: { labels: ['รอดำเนินการ', 'รออะไหล่', 'เสร็จสิ้น'], datasets: [{ data: [pending, waiting, completed], backgroundColor: ['#ffc107', '#dc3545', '#198754'] }] }
+            });
+        } catch (err) {
+            console.error('Failed to load dashboard:', err);
+        }
     }
 
     async function loadMachines() {
-        const res = await fetch('/api/machines');
-        machinesData = await res.json();
-        const dropdown = document.getElementById('machineDropdown');
-        const bdDropdown = document.getElementById('bdMachineId');
-        dropdown.innerHTML = `<option value="">-- กรุณาเลือกเครื่องจักร --</option>`;
-        if (bdDropdown) bdDropdown.innerHTML = `<option value="">-- เลือกเครื่องจักร --</option>`;
-        
-        machinesData.forEach(m => {
-            dropdown.innerHTML += `<option value="${m.id}">${m.name} (${m.location})</option>`;
-            if (bdDropdown) bdDropdown.innerHTML += `<option value="${m.id}">${m.name}</option>`;
-        });
+        try {
+            const res = await fetch('/api/machines');
+            machinesData = await res.json();
+            const dropdown = document.getElementById('machineDropdown');
+            const bdDropdown = document.getElementById('bdMachineId');
+            
+            let dropdownHtml = `<option value="">-- กรุณาเลือกเครื่องจักร --</option>`;
+            let bdDropdownHtml = `<option value="">-- เลือกเครื่องจักร --</option>`;
+
+            machinesData.forEach(m => {
+                const name = escapeHtml(m.name);
+                const loc = escapeHtml(m.location);
+                dropdownHtml += `<option value="${m.id}">${name} (${loc})</option>`;
+                bdDropdownHtml += `<option value="${m.id}">${name}</option>`;
+            });
+
+            dropdown.innerHTML = dropdownHtml;
+            if (bdDropdown) bdDropdown.innerHTML = bdDropdownHtml;
+        } catch (err) {
+            console.error('Failed to load machines:', err);
+        }
     }
 
     function onMachineDropdownChange(id) {
@@ -877,81 +934,99 @@
     async function deleteCurrentMachine() {
         if (!currentMachineId) return;
         if (confirm('คุณต้องการลบเครื่องจักรนี้และแผนงานทั้งหมดของเครื่องนี้ใช่หรือไม่?')) {
-            await fetch(`/api/machines/${currentMachineId}`, { method: 'DELETE' });
-            alert('ลบเครื่องจักรเรียบร้อยแล้ว');
-            currentMachineId = null;
-            document.getElementById('planCard').style.display = 'none';
-            loadMachines();
-            loadDashboard();
+            try {
+                await fetch(`/api/machines/${currentMachineId}`, { method: 'DELETE' });
+                alert('ลบเครื่องจักรเรียบร้อยแล้ว');
+                currentMachineId = null;
+                document.getElementById('planCard').style.display = 'none';
+                loadMachines();
+                loadDashboard();
+            } catch (err) {
+                alert('ไม่สามารถลบเครื่องจักรได้');
+            }
         }
     }
 
     document.getElementById('machineForm').onsubmit = async (e) => {
         e.preventDefault();
-        await fetch('/api/machines', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({name: document.getElementById('machName').value, location: document.getElementById('machLoc').value})
-        });
-        document.getElementById('machName').value = '';
-        document.getElementById('machLoc').value = '';
-        loadMachines();
+        try {
+            await fetch('/api/machines', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({name: document.getElementById('machName').value, location: document.getElementById('machLoc').value})
+            });
+            document.getElementById('machName').value = '';
+            document.getElementById('machLoc').value = '';
+            loadMachines();
+        } catch (err) {
+            alert('เกิดข้อผิดพลาดในการบันทึกเครื่องจักร');
+        }
     };
 
     async function loadSpareDropdown() {
-        const res = await fetch('/api/spare-parts');
-        const parts = await res.json();
-        const select = document.getElementById('taskSparePart');
-        select.innerHTML = `<option value="">-- เลือกอะไหล่ที่ต้องใช้ (ถ้ามี) --</option>`;
-        parts.forEach(p => {
-            select.innerHTML += `<option value="${p.id}">${p.part_name} (คงเหลือ: ${p.stock_qty})</option>`;
-        });
+        try {
+            const res = await fetch('/api/spare-parts');
+            const parts = await res.json();
+            const select = document.getElementById('taskSparePart');
+            let options = `<option value="">-- เลือกอะไหล่ที่ต้องใช้ (ถ้ามี) --</option>`;
+            parts.forEach(p => {
+                options += `<option value="${p.id}">${escapeHtml(p.part_name)} (คงเหลือ: ${p.stock_qty})</option>`;
+            });
+            select.innerHTML = options;
+        } catch (err) {
+            console.error('Failed to load spare dropdown:', err);
+        }
     }
 
     async function loadPlans(machineId) {
-        const res = await fetch(`/api/plans/${machineId}`);
-        const plans = await res.json();
-        const tbody = document.getElementById('planTableBody');
-        tbody.innerHTML = '';
-        const canEdit = currentUser.role === 'admin' || currentUser.role === 'member';
+        try {
+            const res = await fetch(`/api/plans/${machineId}`);
+            const plans = await res.json();
+            const tbody = document.getElementById('planTableBody');
+            const canEdit = currentUser && (currentUser.role === 'admin' || currentUser.role === 'member');
 
-        plans.forEach(p => {
-            tbody.innerHTML += `
+            tbody.innerHTML = plans.map(p => `
                 <tr>
-                    <td class="text-start">${p.task_name}</td>
+                    <td class="text-start">${escapeHtml(p.task_name)}</td>
                     <td>${p.next_due_date ? p.next_due_date.split('T')[0] : ''}</td>
                     <td><small class="badge bg-info text-dark">รอบ ${p.interval_months} ด.</small></td>
-                    <td>${p.spare_part_name ? `<span class="badge bg-info text-dark">📦 ${p.spare_part_name}</span>` : '-'}</td>
+                    <td>${p.spare_part_name ? `<span class="badge bg-info text-dark">📦 ${escapeHtml(p.spare_part_name)}</span>` : '-'}</td>
                     <td>
                         ${canEdit ? `
                         <select class="form-select form-select-sm" onchange="updatePlanStatus(${p.id}, this.value)">
                             <option value="รอดำเนินการ" ${p.status === 'รอดำเนินการ' ? 'selected' : ''}>รอดำเนินการ</option>
                             <option value="รออะไหล่" ${p.status === 'รออะไหล่' ? 'selected' : ''}>รออะไหล่</option>
                             <option value="เสร็จสิ้น" ${p.status === 'เสร็จสิ้น' ? 'selected' : ''}>เสร็จสิ้น</option>
-                        </select>` : `<span class="badge bg-secondary">${p.status}</span>`}
+                        </select>` : `<span class="badge bg-secondary">${escapeHtml(p.status)}</span>`}
                     </td>
-                    <td>${p.image_url ? `<img src="${p.image_url}" class="thumb-img" onclick="window.open(this.src)">` : '-'}</td>
-                    <td>${currentUser.role === 'admin' ? `<button class="btn btn-sm btn-outline-danger" onclick="deletePlan(${p.id})">ลบ</button>` : '-'}</td>
+                    <td>${p.image_url ? `<img src="${escapeHtml(p.image_url)}" class="thumb-img" onclick="window.open(this.src)">` : '-'}</td>
+                    <td>${currentUser && currentUser.role === 'admin' ? `<button class="btn btn-sm btn-outline-danger" onclick="deletePlan(${p.id})">ลบ</button>` : '-'}</td>
                 </tr>
-            `;
-        });
+            `).join('');
+        } catch (err) {
+            console.error('Failed to load plans:', err);
+        }
     }
 
     document.getElementById('planForm').onsubmit = async (e) => {
         e.preventDefault();
-        const formData = new FormData();
-        formData.append('machine_id', currentMachineId);
-        formData.append('task_name', document.getElementById('taskName').value);
-        formData.append('next_due_date', document.getElementById('dueDate').value);
-        formData.append('interval_months', document.getElementById('intervalMonths').value);
-        formData.append('spare_part_id', document.getElementById('taskSparePart').value);
-        formData.append('notes', document.getElementById('taskNotes').value);
-        const img = document.getElementById('taskImage').files[0];
-        if (img) formData.append('image', img);
+        try {
+            const formData = new FormData();
+            formData.append('machine_id', currentMachineId);
+            formData.append('task_name', document.getElementById('taskName').value);
+            formData.append('next_due_date', document.getElementById('dueDate').value);
+            formData.append('interval_months', document.getElementById('intervalMonths').value);
+            formData.append('spare_part_id', document.getElementById('taskSparePart').value);
+            formData.append('notes', document.getElementById('taskNotes').value);
+            const img = document.getElementById('taskImage').files[0];
+            if (img) formData.append('image', img);
 
-        await fetch('/api/plans', { method: 'POST', body: formData });
-        e.target.reset();
-        loadPlans(currentMachineId);
+            await fetch('/api/plans', { method: 'POST', body: formData });
+            e.target.reset();
+            loadPlans(currentMachineId);
+        } catch (err) {
+            alert('เกิดข้อผิดพลาดในการบันทึกแผน TPM');
+        }
     };
 
     async function updatePlanStatus(id, status) {
@@ -967,111 +1042,149 @@
             if (!actual_date.trim()) actual_date = today;
         }
 
-        await fetch(`/api/plans/${id}/status`, {
-            method: 'PATCH',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({status, actual_date})
-        });
-        if (currentMachineId) loadPlans(currentMachineId);
-        loadDashboard();
-        loadSpareParts();
-        loadMasterPlan();
-        loadHistoryPlan();
+        try {
+            await fetch(`/api/plans/${id}/status`, {
+                method: 'PATCH',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({status, actual_date})
+            });
+            if (currentMachineId) loadPlans(currentMachineId);
+            loadDashboard();
+            loadSpareParts();
+            loadMasterPlan();
+            loadHistoryPlan();
+        } catch (err) {
+            alert('ไม่สามารถอัปเดตสถานะได้');
+        }
     }
 
     async function deletePlan(id) {
         if (confirm('ต้องการลบแผนงานนี้ใช่หรือไม่?')) {
-            await fetch(`/api/plans/${id}`, { method: 'DELETE' });
-            if (currentMachineId) loadPlans(currentMachineId);
-            loadDashboard();
-            loadMasterPlan();
+            try {
+                await fetch(`/api/plans/${id}`, { method: 'DELETE' });
+                if (currentMachineId) loadPlans(currentMachineId);
+                loadDashboard();
+                loadMasterPlan();
+            } catch (err) {
+                alert('เกิดข้อผิดพลาดในการลบแผนงาน');
+            }
         }
     }
 
     async function loadBreakdowns() {
-        const res = await fetch('/api/breakdowns');
-        const data = await res.json();
-        const tbody = document.getElementById('breakdownTableBody');
-        tbody.innerHTML = '';
-        data.forEach(b => {
-            tbody.innerHTML += `
+        try {
+            const res = await fetch('/api/breakdowns');
+            const data = await res.json();
+            const tbody = document.getElementById('breakdownTableBody');
+            
+            tbody.innerHTML = data.map(b => `
                 <tr>
                     <td>${b.breakdown_date ? b.breakdown_date.split('T')[0] : ''}</td>
-                    <td class="text-start">${b.machine_name}</td>
-                    <td class="text-start">${b.symptom}</td>
-                    <td class="text-start">${b.cause}</td>
+                    <td class="text-start">${escapeHtml(b.machine_name)}</td>
+                    <td class="text-start">${escapeHtml(b.symptom)}</td>
+                    <td class="text-start">${escapeHtml(b.cause)}</td>
                     <td>${b.downtime_hours} ชม.</td>
-                    <td>${parseFloat(b.repair_cost).toLocaleString()} ฿</td>
-                    <td>${currentUser.role === 'admin' ? `<button class="btn btn-sm btn-outline-danger" onclick="deleteBreakdown(${b.id})">ลบ</button>` : '-'}</td>
+                    <td>${parseFloat(b.repair_cost || 0).toLocaleString()} ฿</td>
+                    <td>${currentUser && currentUser.role === 'admin' ? `<button class="btn btn-sm btn-outline-danger" onclick="deleteBreakdown(${b.id})">ลบ</button>` : '-'}</td>
                 </tr>
-            `;
-        });
+            `).join('');
+        } catch (err) {
+            console.error('Failed to load breakdowns:', err);
+        }
     }
 
     document.getElementById('breakdownForm').onsubmit = async (e) => {
         e.preventDefault();
-        await fetch('/api/breakdowns', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({
-                machine_id: document.getElementById('bdMachineId').value,
-                breakdown_date: document.getElementById('bdDate').value,
-                downtime_hours: document.getElementById('bdDowntime').value,
-                repair_cost: document.getElementById('bdCost').value,
-                symptom: document.getElementById('bdSymptom').value,
-                cause: document.getElementById('bdCause').value
-            })
-        });
-        loadBreakdowns();
-        loadDashboard();
-        e.target.reset();
+        try {
+            await fetch('/api/breakdowns', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    machine_id: document.getElementById('bdMachineId').value,
+                    breakdown_date: document.getElementById('bdDate').value,
+                    downtime_hours: document.getElementById('bdDowntime').value,
+                    repair_cost: document.getElementById('bdCost').value,
+                    symptom: document.getElementById('bdSymptom').value,
+                    cause: document.getElementById('bdCause').value
+                })
+            });
+            loadBreakdowns();
+            loadDashboard();
+            e.target.reset();
+        } catch (err) {
+            alert('เกิดข้อผิดพลาดในการบันทึกประวัติเครื่องเสีย');
+        }
     };
 
     async function deleteBreakdown(id) {
         if (confirm('ต้องการลบประวัตินี้ใช่หรือไม่?')) {
-            await fetch(`/api/breakdowns/${id}`, {method: 'DELETE'});
-            loadBreakdowns();
+            try {
+                await fetch(`/api/breakdowns/${id}`, {method: 'DELETE'});
+                loadBreakdowns();
+            } catch (err) {
+                alert('ไม่สามารถลบรายการได้');
+            }
         }
     }
 
     async function loadSpareParts() {
-        const res = await fetch('/api/spare-parts');
-        const data = await res.json();
-        const tbody = document.getElementById('spareTableBody');
-        tbody.innerHTML = '';
-        const canEdit = currentUser.role === 'admin' || currentUser.role === 'member';
+        try {
+            const res = await fetch('/api/spare-parts');
+            const data = await res.json();
+            const tbody = document.getElementById('spareTableBody');
+            const canEdit = currentUser && (currentUser.role === 'admin' || currentUser.role === 'member');
 
-        data.forEach(s => {
-            const isLow = s.stock_qty <= s.min_qty;
-            tbody.innerHTML += `
-                <tr>
-                    <td class="text-start fw-bold">${s.part_name}</td>
-                    <td class="fw-bold ${isLow ? 'text-danger' : 'text-success'} fs-5">${s.stock_qty}</td>
-                    <td>${s.min_qty}</td>
-                    <td>${isLow ? '<span class="badge bg-danger">ใกล้หมด</span>' : '<span class="badge bg-success">ปกติ</span>'}</td>
-                    <td>
-                        ${canEdit ? `<button class="btn btn-sm btn-outline-primary me-1" onclick="openEditSpareModal(${s.id}, '${s.part_name}', ${s.stock_qty}, ${s.min_qty})">แก้ไข</button>` : ''}
-                        ${currentUser.role === 'admin' ? `<button class="btn btn-sm btn-outline-danger" onclick="deleteSpare(${s.id})">ลบ</button>` : '-'}
-                    </td>
-                </tr>
-            `;
-        });
+            tbody.innerHTML = data.map(s => {
+                const isLow = s.stock_qty <= s.min_qty;
+                return `
+                    <tr>
+                        <td class="text-start fw-bold">${escapeHtml(s.part_name)}</td>
+                        <td class="fw-bold ${isLow ? 'text-danger' : 'text-success'} fs-5">${s.stock_qty}</td>
+                        <td>${s.min_qty}</td>
+                        <td>${isLow ? '<span class="badge bg-danger">ใกล้หมด</span>' : '<span class="badge bg-success">ปกติ</span>'}</td>
+                        <td>
+                            ${canEdit ? `<button class="btn btn-sm btn-outline-primary me-1" 
+                                data-id="${s.id}" 
+                                data-name="${escapeHtml(s.part_name)}" 
+                                data-qty="${s.stock_qty}" 
+                                data-min="${s.min_qty}" 
+                                onclick="handleEditSpareClick(this)">แก้ไข</button>` : ''}
+                            ${currentUser && currentUser.role === 'admin' ? `<button class="btn btn-sm btn-outline-danger" onclick="deleteSpare(${s.id})">ลบ</button>` : '-'}
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+        } catch (err) {
+            console.error('Failed to load spare parts:', err);
+        }
+    }
+
+    function handleEditSpareClick(btn) {
+        const id = btn.getAttribute('data-id');
+        const name = btn.getAttribute('data-name');
+        const qty = btn.getAttribute('data-qty');
+        const min = btn.getAttribute('data-min');
+        openEditSpareModal(id, name, qty, min);
     }
 
     document.getElementById('spareForm').onsubmit = async (e) => {
         e.preventDefault();
-        await fetch('/api/spare-parts', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({
-                part_name: document.getElementById('spareName').value,
-                stock_qty: document.getElementById('spareQty').value,
-                min_qty: document.getElementById('spareMin').value
-            })
-        });
-        loadSpareParts();
-        loadSpareDropdown();
-        e.target.reset();
+        try {
+            await fetch('/api/spare-parts', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    part_name: document.getElementById('spareName').value,
+                    stock_qty: document.getElementById('spareQty').value,
+                    min_qty: document.getElementById('spareMin').value
+                })
+            });
+            loadSpareParts();
+            loadSpareDropdown();
+            e.target.reset();
+        } catch (err) {
+            alert('เกิดข้อผิดพลาดในการบันทึกข้อมูลอะไหล่');
+        }
     };
 
     function openEditSpareModal(id, name, qty, min) {
@@ -1089,29 +1202,37 @@
         const stock_qty = document.getElementById('editSpareQty').value;
         const min_qty = document.getElementById('editSpareMin').value;
 
-        const res = await fetch(`/api/spare-parts/${id}`, {
-            method: 'PUT',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({ part_name, stock_qty, min_qty })
-        });
+        try {
+            const res = await fetch(`/api/spare-parts/${id}`, {
+                method: 'PUT',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ part_name, stock_qty, min_qty })
+            });
 
-        if (res.ok) {
-            alert('แก้ไขข้อมูลอะไหล่เรียบร้อยแล้ว');
-            const modalEl = document.getElementById('editSpareModal');
-            const modalInstance = bootstrap.Modal.getInstance(modalEl);
-            if (modalInstance) modalInstance.hide();
-            loadSpareParts();
-            loadSpareDropdown();
-            loadDashboard();
-        } else alert('เกิดข้อผิดพลาดในการแก้ไขอะไหล่');
+            if (res.ok) {
+                alert('แก้ไขข้อมูลอะไหล่เรียบร้อยแล้ว');
+                const modalEl = document.getElementById('editSpareModal');
+                const modalInstance = bootstrap.Modal.getInstance(modalEl);
+                if (modalInstance) modalInstance.hide();
+                loadSpareParts();
+                loadSpareDropdown();
+                loadDashboard();
+            } else alert('เกิดข้อผิดพลาดในการแก้ไขอะไหล่');
+        } catch (err) {
+            alert('ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้');
+        }
     }
 
     async function deleteSpare(id) {
         if (confirm('ต้องการลบอะไหล่นี้ใช่หรือไม่?')) {
-            await fetch(`/api/spare-parts/${id}`, {method: 'DELETE'});
-            loadSpareParts();
-            loadSpareDropdown();
-            loadDashboard();
+            try {
+                await fetch(`/api/spare-parts/${id}`, {method: 'DELETE'});
+                loadSpareParts();
+                loadSpareDropdown();
+                loadDashboard();
+            } catch (err) {
+                alert('เกิดข้อผิดพลาดในการลบอะไหล่');
+            }
         }
     }
 </script>
