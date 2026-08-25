@@ -169,14 +169,40 @@
                 <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
                     <h4 class="text-primary fw-bold m-0">📊 ตาราง Master Plan ทั้งหมด</h4>
                     <div class="d-flex gap-2">
-                        <button class="btn btn-success" onclick="downloadMasterPlanExcel()">📥 โหลด Excel</button>
-                        <button class="btn btn-danger" onclick="downloadMasterPlanPDF()">📥 โหลด PDF</button>
+                        <button class="btn btn-success fw-bold" onclick="downloadMasterPlanExcel()">📥 โหลด Excel (รายการที่เลือก)</button>
+                        <button class="btn btn-danger fw-bold" onclick="downloadMasterPlanPDF()">📥 โหลด PDF (รายการที่เลือก)</button>
                     </div>
                 </div>
+
+                <!-- เครื่องมือเลือกรายการสำหรับดาวน์โหลด -->
+                <div class="bg-light p-3 rounded mb-3 border">
+                    <div class="d-flex align-items-center flex-wrap gap-2">
+                        <span class="fw-bold text-secondary">เลือกลัดสำหรับดาวน์โหลด:</span>
+                        <button class="btn btn-outline-primary btn-sm" onclick="toggleSelectAllMaster(true)">เลือกทั้งหมด</button>
+                        <button class="btn btn-outline-secondary btn-sm" onclick="toggleSelectAllMaster(false)">ล้างตัวเลือก</button>
+                        <span class="vr"></span>
+                        <button class="btn btn-outline-info btn-sm text-dark" onclick="selectMasterByTimeframe(1)">งานภายใน 1 เดือน</button>
+                        <button class="btn btn-outline-info btn-sm text-dark" onclick="selectMasterByTimeframe(3)">งานภายใน 3 เดือน</button>
+                        <button class="btn btn-outline-info btn-sm text-dark" onclick="selectMasterByTimeframe(6)">งานภายใน 6 เดือน</button>
+                        <button class="btn btn-outline-info btn-sm text-dark" onclick="selectMasterByTimeframe(12)">งานภายใน 12 เดือน</button>
+                    </div>
+                </div>
+
                 <div class="table-responsive">
                     <table class="table table-bordered text-center" id="masterTable">
                         <thead class="table-dark">
-                            <tr><th>สถานะสี</th><th>วันที่กำหนด</th><th>เครื่องจักร</th><th>ชื่องาน</th><th>รอบซ้ำ</th><th>อะไหล่ที่ใช้</th><th>สถานะ</th><th>หมายเหตุ</th><th>รูป</th></tr>
+                            <tr>
+                                <th><input type="checkbox" id="selectAllHeaderCb" onchange="toggleSelectAllMaster(this.checked)"></th>
+                                <th>สถานะสี</th>
+                                <th>วันที่กำหนด</th>
+                                <th>เครื่องจักร</th>
+                                <th>ชื่องาน</th>
+                                <th>รอบซ้ำ</th>
+                                <th>อะไหล่ที่ใช้</th>
+                                <th>สถานะ</th>
+                                <th>หมายเหตุ</th>
+                                <th>รูป</th>
+                            </tr>
                         </thead>
                         <tbody id="masterTableBody"></tbody>
                     </table>
@@ -457,7 +483,8 @@
             else if (dueDate < today) colorClass = 'bg-red';
 
             tbody.innerHTML += `
-                <tr>
+                <tr data-due="${dueDate}">
+                    <td><input type="checkbox" class="master-cb"></td>
                     <td><span class="color-block ${colorClass}"></span></td>
                     <td>${dueDate}</td>
                     <td><strong>${p.machine_name}</strong> (${p.location})</td>
@@ -470,6 +497,128 @@
                 </tr>
             `;
         });
+    }
+
+    // ฟังก์ชั่นเลือกทั้งหมด / ล้างตัวเลือก
+    function toggleSelectAllMaster(checked) {
+        document.querySelectorAll('.master-cb').forEach(cb => cb.checked = checked);
+        document.getElementById('selectAllHeaderCb').checked = checked;
+    }
+
+    // ฟังก์ชั่นเลือกตามช่วงเวลา (1, 3, 6, 12 เดือน)
+    function selectMasterByTimeframe(months) {
+        toggleSelectAllMaster(false);
+        const today = new Date();
+        const targetDate = new Date();
+        targetDate.setMonth(today.getMonth() + months);
+
+        document.querySelectorAll('#masterTableBody tr').forEach(tr => {
+            const dueStr = tr.getAttribute('data-due');
+            if (dueStr) {
+                const dueDate = new Date(dueStr);
+                if (dueDate <= targetDate) {
+                    const cb = tr.querySelector('.master-cb');
+                    if (cb) cb.checked = true;
+                }
+            }
+        });
+    }
+
+    // ดาวน์โหลด Excel (เลือกเฉพาะรายการที่ติ๊ก)
+    function downloadMasterPlanExcel() {
+        const checkedRows = document.querySelectorAll('.master-cb:checked');
+        if (checkedRows.length === 0) {
+            return alert('กรุณาติ๊กเลือกรายการที่ต้องการดาวน์โหลดก่อนครับ');
+        }
+
+        const data = [];
+        // หัวตาราง Excel
+        data.push(["วันที่กำหนด", "เครื่องจักร", "ชื่องาน", "รอบซ้ำ (เดือน)", "อะไหล่ที่ใช้", "สถานะ", "หมายเหตุ"]);
+
+        checkedRows.forEach(cb => {
+            const tr = cb.closest('tr');
+            const cols = tr.children;
+            data.push([
+                cols[2].innerText, // วันที่กำหนด
+                cols[3].innerText, // เครื่องจักร
+                cols[4].innerText, // ชื่องาน
+                cols[5].innerText, // รอบซ้ำ
+                cols[6].innerText, // อะไหล่
+                cols[7].innerText, // สถานะ
+                cols[8].innerText  // หมายเหตุ
+            ]);
+        });
+
+        const ws = XLSX.utils.aoa_to_sheet(data);
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, "Master Plan");
+        XLSX.writeFile(wb, `Master_Plan_TPM_${new Date().toISOString().split('T')[0]}.xlsx`);
+    }
+
+    // ดาวน์โหลด PDF (ตัดสี, รอบซ้ำ, อะไหล่ ออกตามคำขอ)
+    function downloadMasterPlanPDF() {
+        const checkedRows = document.querySelectorAll('.master-cb:checked');
+        if (checkedRows.length === 0) {
+            return alert('กรุณาติ๊กเลือกรายการที่ต้องการดาวน์โหลดก่อนครับ');
+        }
+
+        const container = document.createElement('div');
+        container.style.padding = '10px';
+
+        let tableHtml = `
+            <h3 style="text-align: center; font-family: sans-serif; margin-bottom: 15px;">
+                ตาราง Master Plan - แผนการบำรุงรักษา (TPM)
+            </h3>
+            <table border="1" style="width: 100%; border-collapse: collapse; text-align: center; font-size: 11px; font-family: sans-serif;">
+                <thead style="background-color: #212529; color: white;">
+                    <tr>
+                        <th style="padding: 8px; width: 12%;">วันที่กำหนด</th>
+                        <th style="padding: 8px; width: 25%;">เครื่องจักร</th>
+                        <th style="padding: 8px; width: 25%;">ชื่องาน</th>
+                        <th style="padding: 8px; width: 12%;">สถานะ</th>
+                        <th style="padding: 8px; width: 16%;">หมายเหตุ</th>
+                        <th style="padding: 8px; width: 10%;">รูป</th>
+                    </tr>
+                </thead>
+                <tbody>
+        `;
+
+        checkedRows.forEach(cb => {
+            const tr = cb.closest('tr');
+            const cols = tr.children;
+
+            const dueDate = cols[2].innerText;
+            const machine = cols[3].innerText;
+            const task = cols[4].innerText;
+            const status = cols[7].innerText;
+            const notes = cols[8].innerText;
+            const imgEl = cols[9].querySelector('img');
+            const imgHtml = imgEl ? `<img src="${imgEl.src}" style="width: 35px; height: 35px; object-fit: cover; border-radius: 4px;">` : '-';
+
+            tableHtml += `
+                <tr>
+                    <td style="padding: 6px;">${dueDate}</td>
+                    <td style="padding: 6px; text-align: left;">${machine}</td>
+                    <td style="padding: 6px; text-align: left;">${task}</td>
+                    <td style="padding: 6px;">${status}</td>
+                    <td style="padding: 6px; text-align: left;">${notes}</td>
+                    <td style="padding: 6px;">${imgHtml}</td>
+                </tr>
+            `;
+        });
+
+        tableHtml += `</tbody></table>`;
+        container.innerHTML = tableHtml;
+
+        const opt = {
+            margin:       8,
+            filename:     `Master_Plan_TPM_${new Date().toISOString().split('T')[0]}.pdf`,
+            image:        { type: 'jpeg', quality: 0.98 },
+            html2canvas:  { scale: 2, useCORS: true },
+            jsPDF:        { unit: 'mm', format: 'a4', orientation: 'landscape' }
+        };
+
+        html2pdf().set(opt).from(container).save();
     }
 
     async function loadOverduePlan() {
@@ -513,17 +662,6 @@
                 </tr>
             `;
         });
-    }
-
-    function downloadMasterPlanExcel() {
-        const table = document.getElementById("masterTable");
-        const wb = XLSX.utils.table_to_book(table, {sheet: "Master Plan"});
-        XLSX.writeFile(wb, `Master_Plan_TPM_${new Date().toISOString().split('T')[0]}.xlsx`);
-    }
-
-    function downloadMasterPlanPDF() {
-        const element = document.getElementById('masterTable');
-        html2pdf().from(element).save(`Master_Plan_TPM_${new Date().toISOString().split('T')[0]}.pdf`);
     }
 
     // --- ส่วนการจัดการอื่นๆ ---
