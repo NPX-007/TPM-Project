@@ -261,11 +261,15 @@
         <!-- ประวัติงานเสร็จ -->
         <div class="tab-pane fade" id="historySection" role="tabpanel">
             <div class="card p-4">
-                <h4 class="text-success mb-3">✅ ประวัติงานบำรุงรักษาที่เสร็จสิ้นแล้ว</h4>
+                <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+                    <h4 class="text-success m-0">✅ ประวัติงานบำรุงรักษาที่เสร็จสิ้นแล้ว</h4>
+                    <button class="btn btn-outline-danger btn-sm fw-bold write-permission" onclick="deleteSelectedHistory()">🗑️ ลบรายการที่เลือก</button>
+                </div>
                 <div class="table-responsive">
                     <table class="table table-bordered text-center">
                         <thead class="table-success">
                             <tr>
+                                <th style="width: 40px;"><input type="checkbox" id="selectAllHistoryCb" onchange="toggleSelectAllHistory(this.checked)"></th>
                                 <th>กำหนดเดิม</th>
                                 <th>วันเสร็จจริง</th>
                                 <th>เครื่องจักร</th>
@@ -673,10 +677,14 @@
         const tbody = document.getElementById('historyTableBody');
         tbody.innerHTML = '';
 
+        const selectAllCb = document.getElementById('selectAllHistoryCb');
+        if (selectAllCb) selectAllCb.checked = false;
+
         plans.forEach(p => {
             const actualDate = p.actual_date ? p.actual_date.split('T')[0] : '-';
             tbody.innerHTML += `
                 <tr>
+                    <td><input type="checkbox" class="history-cb" value="${p.id}"></td>
                     <td>${p.next_due_date ? p.next_due_date.split('T')[0] : ''}</td>
                     <td><span class="badge bg-success">${actualDate}</span></td>
                     <td><strong>${p.machine_name}</strong></td>
@@ -688,6 +696,42 @@
                 </tr>
             `;
         });
+    }
+
+    function toggleSelectAllHistory(checked) {
+        document.querySelectorAll('.history-cb').forEach(cb => cb.checked = checked);
+    }
+
+    async function deleteSelectedHistory() {
+        const checkedCbs = document.querySelectorAll('.history-cb:checked');
+        if (checkedCbs.length === 0) {
+            return alert('กรุณาเลือกรายการประวัติงานเสร็จที่ต้องการลบอย่างน้อย 1 รายการ');
+        }
+
+        if (!confirm(`คุณต้องการลบประวัติงานเสร็จที่เลือกจำนวน ${checkedCbs.length} รายการใช่หรือไม่?`)) {
+            return;
+        }
+
+        const ids = Array.from(checkedCbs).map(cb => parseInt(cb.value));
+
+        try {
+            const res = await fetch('/api/plans/bulk-delete', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ ids })
+            });
+            const result = await res.json();
+            if (result.success) {
+                alert('ลบรายการประวัติงานเสร็จเรียบร้อยแล้ว');
+                loadHistoryPlan();
+                loadDashboard();
+                loadMasterPlan();
+            } else {
+                alert(result.message || 'เกิดข้อผิดพลาดในการลบข้อมูล');
+            }
+        } catch (err) {
+            alert('เกิดข้อผิดพลาดในการเชื่อมต่อเซิร์ฟเวอร์');
+        }
     }
 
     // --- ส่วนการจัดการสมาชิกและสิทธิ์ (Admin Only) ---

@@ -337,6 +337,7 @@ app.patch('/api/plans/:id/status', async (req, res) => {
     }
 });
 
+// ลบแผนงานเดี่ยว
 app.delete('/api/plans/:id', async (req, res) => {
     try {
         const id = parseInt(req.params.id);
@@ -344,6 +345,21 @@ app.delete('/api/plans/:id', async (req, res) => {
         res.json({ success: true });
     } catch (err) {
         console.error('Delete Plan Error:', err);
+        res.status(500).json({ success: false, message: err.message });
+    }
+});
+
+// ลบประวัติ/แผนงานแบบหลายรายการ (Bulk Delete)
+app.post('/api/plans/bulk-delete', async (req, res) => {
+    try {
+        const { ids } = req.body;
+        if (!ids || !Array.isArray(ids) || ids.length === 0) {
+            return res.json({ success: false, message: 'กรุณาเลือกรายการที่ต้องการลบ' });
+        }
+        await db.query('DELETE FROM plans WHERE id = ANY($1::int[])', [ids]);
+        res.json({ success: true, message: 'ลบรายการที่เลือกเรียบร้อยแล้ว' });
+    } catch (err) {
+        console.error('Bulk Delete Plans Error:', err);
         res.status(500).json({ success: false, message: err.message });
     }
 });
