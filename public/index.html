@@ -535,9 +535,9 @@
 
     function selectMasterByTimeframe(months) {
         toggleSelectAllMaster(false);
-        const today = new Date();
         const targetDate = new Date();
-        targetDate.setMonth(today.getMonth() + months);
+        targetDate.setMonth(targetDate.getMonth() + months);
+        targetDate.setHours(23, 59, 59, 999);
 
         document.querySelectorAll('#masterTableBody tr').forEach(tr => {
             const dueStr = tr.getAttribute('data-due');
@@ -591,6 +591,9 @@
 
         const container = document.createElement('div');
         container.style.padding = '10px';
+        container.style.position = 'absolute';
+        container.style.left = '-9999px';
+        container.style.top = '-9999px';
 
         let tableHtml = `
             <h3 style="text-align: center; font-family: sans-serif; margin-bottom: 15px;">
@@ -637,6 +640,7 @@
 
         tableHtml += `</tbody></table>`;
         container.innerHTML = tableHtml;
+        document.body.appendChild(container);
 
         const opt = {
             margin:       8,
@@ -646,7 +650,9 @@
             jsPDF:        { unit: 'mm', format: 'a4', orientation: 'landscape' }
         };
 
-        html2pdf().set(opt).from(container).save();
+        html2pdf().set(opt).from(container).save().then(() => {
+            document.body.removeChild(container);
+        });
     }
 
     async function loadOverduePlan() {
@@ -849,9 +855,11 @@
     }
 
     function onMachineDropdownChange(id) {
+        const deleteBtn = document.getElementById('btnDeleteMachine');
         if (!id) {
             currentMachineId = null;
             document.getElementById('planCard').style.display = 'none';
+            if (deleteBtn) deleteBtn.style.display = 'none';
             return;
         }
         currentMachineId = id;
@@ -860,7 +868,7 @@
             document.getElementById('selectedMachineTitle').innerText = `เครื่อง: ${found.name}`;
             document.getElementById('selectedMachineLoc').innerText = `ตำแหน่ง: ${found.location}`;
             document.getElementById('planCard').style.display = 'block';
-            if (currentUser.role === 'admin') document.getElementById('btnDeleteMachine').style.display = 'block';
+            if (deleteBtn) deleteBtn.style.display = (currentUser && currentUser.role === 'admin') ? 'block' : 'none';
             loadPlans(id);
             loadSpareDropdown();
         }

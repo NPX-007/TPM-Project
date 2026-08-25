@@ -206,6 +206,8 @@ app.post('/api/machines', async (req, res) => {
 app.delete('/api/machines/:id', async (req, res) => {
     try {
         const id = parseInt(req.params.id);
+        // ลบข้อมูลที่เกี่ยวข้องในตารางอื่นเพื่อป้องกัน Foreign Key Constraint Error
+        await db.query('DELETE FROM breakdowns WHERE machine_id = $1', [id]);
         await db.query('DELETE FROM plans WHERE machine_id = $1', [id]);
         await db.query('DELETE FROM machines WHERE id = $1', [id]);
         res.json({ success: true });
@@ -327,7 +329,8 @@ app.patch('/api/plans/:id/status', async (req, res) => {
             const actualDate = actual_date || new Date().toISOString().split('T')[0];
             await db.query('UPDATE plans SET status = $1, actual_date = $2 WHERE id = $3', [status, actualDate, id]);
         } else {
-            await db.query('UPDATE plans SET status = $1 WHERE id = $2', [status, id]);
+            // เมื่อย้อนกลับจาก 'เสร็จสิ้น' ให้รีเซ็ต actual_date เป็น NULL
+            await db.query('UPDATE plans SET status = $1, actual_date = NULL WHERE id = $2', [status, id]);
         }
 
         res.json({ success: true });
@@ -464,6 +467,8 @@ app.put('/api/spare-parts/:id', async (req, res) => {
 app.delete('/api/spare-parts/:id', async (req, res) => {
     try {
         const id = parseInt(req.params.id);
+        // ถอนอ้างอิงอะไหล่ที่อยู่ในตาราง plans ออกก่อนลบ ป้องกัน Foreign Key Constraint Error
+        await db.query('UPDATE plans SET spare_part_id = NULL WHERE spare_part_id = $1', [id]);
         await db.query('DELETE FROM spare_parts WHERE id = $1', [id]);
         res.json({ success: true });
     } catch (err) {
