@@ -4,7 +4,7 @@ const dns = require('dns');
 const path = require('path');
 const multer = require('multer');
 
-// บังคับระดับ Low-level DNS ให้คืนค่าเฉพาะ IPv4 เท่านั้น (แก้ปัญหา pg บน Render)
+// บังคับ DNS เป็น IPv4 เพื่อป้องกันปัญหาการเชื่อมต่อบน Render
 const originalLookup = dns.lookup;
 dns.lookup = (hostname, options, callback) => {
     if (typeof options === 'function') {
@@ -29,7 +29,7 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 const upload = multer({ storage: multer.memoryStorage() });
 
-// ฟังก์ชันสร้างตารางทั้งหมดอัตโนมัติเมื่อเริ่มระบบ
+// สร้างตารางข้อมูลอัตโนมัติ
 async function initDB() {
     try {
         await pool.query(`
@@ -37,7 +37,7 @@ async function initDB() {
                 id SERIAL PRIMARY KEY,
                 username TEXT UNIQUE NOT NULL,
                 password TEXT NOT NULL,
-                role TEXT NOT NULL
+                role TEXT NOT NULL DEFAULT 'user'
             );
             CREATE TABLE IF NOT EXISTS machines (
                 id SERIAL PRIMARY KEY,
@@ -71,40 +71,84 @@ async function initDB() {
             );
         `);
 
-        // สร้างบัญชี Admin เริ่มต้นถ้ายังไม่มี
+        // สร้าง Admin เริ่มต้น
         const checkAdmin = await pool.query("SELECT * FROM users WHERE username = 'admin'");
         if (checkAdmin.rows.length === 0) {
-            await pool.query(
-                "INSERT INTO users (username, password, role) VALUES ($1, $2, $3)",
-                ['admin', '1234', 'admin']
-            );
+            await pool.query("INSERT INTO users (username, password, role) VALUES ($1, $2, $3)", ['admin', '1234', 'admin']);
             console.log('✅ สร้างบัญชีผู้ใช้เริ่มต้น (admin / 1234) เรียบร้อยแล้ว');
         }
-        console.log('✅ ตรวจสอบและสร้างตารางฐานข้อมูลทั้งหมดสำเร็จ');
     } catch (err) {
         console.error('❌ เกิดข้อผิดพลาดในการสร้างตาราง:', err);
     }
 }
-
 initDB();
 
-// API Login
+// --- API ยืนยันตัวตน และจัดการผู้ใช้งาน ---
+
+// สมัครสมาชิกใหม่ (ค่าเริ่มต้นเป็น 'user')
+app.post('/api/register', async (req, res) => {
+    const { username, password } = req.body;
+    try {
+        const checkUser = await pool.query('SELECT * FROM users WHERE username = $1', [username]);
+        if (checkUser.rows.length > 0) {
+            return res.status(400).json({ success: false, message: 'ชื่อผู้ใช้นี้มีอยู่ในระบบแล้ว' });
+        }
+        await pool.query('INSERT INTO users (username, password, role) VALUES ($1, $2, $3)', [username, password, 'user']);
+        res.json({ success: true, message: 'ลงทะเบียนสำเร็จ! กรุณาเข้าสู่ระบบ' });
+    } catch (err) {
+        res.status(500).json({ success: false, message: err.message });
+    }
+});
+
+// เข้าสู่ระบบ
 app.post('/api/login', async (req, res) => {
     const { username, password } = req.body;
     try {
-        const result = await pool.query('SELECT * FROM users WHERE username = $1 AND password = $2', [username, password]);
+        const result = await pool.query('SELECT id, username, role FROM users WHERE username = $1 AND password = $2', [username, password]);
         if (result.rows.length > 0) {
-            res.json({ success: true, message: 'เข้าสู่ระบบสำเร็จ', user: { username: result.rows[0].username, role: result.rows[0].role } });
+            res.json({ success: true, user: result.rows[0] });
         } else {
             res.status(401).json({ success: false, message: 'ชื่อผู้ใช้งานหรือรหัสผ่านไม่ถูกต้อง' });
         }
     } catch (err) {
-        console.error(err);
-        res.status(500).json({ success: false, message: 'เกิดข้อผิดพลาดจากเซิร์ฟเวอร์' });
+        res.status(500).json({ success: false, message: err.message });
     }
 });
 
-// API Dashboard Summary
+// ดึงรายการผู้ใช้ทั้งหมด (สำหรับ Admin)
+app.get('/api/users', async (req, res) => {
+    try {
+        const result = await pool.query('SELECT id, username, role FROM users ORDER BY id ASC');
+        res.json(result.rows);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// เปลี่ยนสถานะ/สิทธิ์สมาชิก (สำหรับ Admin เท่านั้น)
+app.patch('/api/users/:id/role', async (req, res) => {
+    const { role } = req.body;
+    try {
+        await pool.query('UPDATE users SET role = $1 WHERE id = $2', [role, req.params.id]);
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// ผู้ใช้แก้ไขข้อมูล/รหัสผ่านของตนเอง
+app.patch('/api/users/profile', async (req, res) => {
+    const { userId, newPassword } = req.body;
+    try {
+        await pool.query('UPDATE users SET password = $1 WHERE id = $2', [newPassword, userId]);
+        res.json({ success: true, message: 'อัปเดตรหัสผ่านสำเร็จ' });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// --- API การทำงานหลักระบบ TPM ---
+
 app.get('/api/dashboard-summary', async (req, res) => {
     try {
         const downtimeRes = await pool.query('SELECT SUM(downtime_hours) as total FROM breakdowns');
@@ -123,81 +167,60 @@ app.get('/api/dashboard-summary', async (req, res) => {
     }
 });
 
-// API Machines
 app.get('/api/machines', async (req, res) => {
     try {
         const result = await pool.query('SELECT * FROM machines ORDER BY id DESC');
         res.json(result.rows);
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
+    } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 app.post('/api/machines', async (req, res) => {
-    const { name, location } = req.body;
     try {
-        await pool.query('INSERT INTO machines (name, location) VALUES ($1, $2)', [name, location]);
+        await pool.query('INSERT INTO machines (name, location) VALUES ($1, $2)', [req.body.name, req.body.location]);
         res.json({ success: true });
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
+    } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 app.delete('/api/machines/:id', async (req, res) => {
     try {
         await pool.query('DELETE FROM machines WHERE id = $1', [req.params.id]);
         res.json({ success: true });
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
+    } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// API Plans
 app.get('/api/plans/:machineId', async (req, res) => {
     try {
         const result = await pool.query('SELECT * FROM tpm_plans WHERE machine_id = $1 ORDER BY next_due_date ASC', [req.params.machineId]);
         res.json(result.rows);
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
+    } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 app.post('/api/plans', upload.single('image'), async (req, res) => {
     const { machine_id, task_name, next_due_date, interval_months, notes } = req.body;
-    let imageUrl = null;
-    if (req.file) {
-        imageUrl = `data:${req.file.mimetype};base64,${req.file.buffer.toString('base64')}`;
-    }
+    let imageUrl = req.file ? `data:${req.file.mimetype};base64,${req.file.buffer.toString('base64')}` : null;
     try {
         await pool.query(
             'INSERT INTO tpm_plans (machine_id, task_name, next_due_date, interval_months, notes, image_url) VALUES ($1, $2, $3, $4, $5, $6)',
             [machine_id, task_name, next_due_date, interval_months, notes, imageUrl]
         );
         res.json({ success: true });
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
+    } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 app.patch('/api/plans/:id/status', async (req, res) => {
     try {
         await pool.query('UPDATE tpm_plans SET status = $1 WHERE id = $2', [req.body.status, req.params.id]);
         res.json({ success: true });
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
+    } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 app.delete('/api/plans/:id', async (req, res) => {
     try {
         await pool.query('DELETE FROM tpm_plans WHERE id = $1', [req.params.id]);
         res.json({ success: true });
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
+    } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// API Breakdowns
 app.get('/api/breakdowns', async (req, res) => {
     try {
         const result = await pool.query(`
@@ -207,9 +230,7 @@ app.get('/api/breakdowns', async (req, res) => {
             ORDER BY b.breakdown_date DESC
         `);
         res.json(result.rows);
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
+    } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 app.post('/api/breakdowns', async (req, res) => {
@@ -220,28 +241,21 @@ app.post('/api/breakdowns', async (req, res) => {
             [machine_id, breakdown_date, downtime_hours, repair_cost, symptom, cause]
         );
         res.json({ success: true });
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
+    } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 app.delete('/api/breakdowns/:id', async (req, res) => {
     try {
         await pool.query('DELETE FROM breakdowns WHERE id = $1', [req.params.id]);
         res.json({ success: true });
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
+    } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// API Spare Parts
 app.get('/api/spare-parts', async (req, res) => {
     try {
         const result = await pool.query('SELECT * FROM spare_parts ORDER BY id DESC');
         res.json(result.rows);
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
+    } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 app.post('/api/spare-parts', async (req, res) => {
@@ -249,18 +263,14 @@ app.post('/api/spare-parts', async (req, res) => {
     try {
         await pool.query('INSERT INTO spare_parts (part_name, stock_qty, min_qty) VALUES ($1, $2, $3)', [part_name, stock_qty, min_qty]);
         res.json({ success: true });
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
+    } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 app.delete('/api/spare-parts/:id', async (req, res) => {
     try {
         await pool.query('DELETE FROM spare_parts WHERE id = $1', [req.params.id]);
         res.json({ success: true });
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
+    } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 app.listen(port, () => {
