@@ -4,12 +4,18 @@
     <meta charset="UTF-8">
     <title>ระบบจัดการ TPM & CMMS</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         body { background-color: #f8f9fa; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
-        .container { max-width: 1300px; margin-top: 20px; }
+        .container { max-width: 1350px; margin-top: 20px; }
         .card { border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); margin-bottom: 20px; }
         .thumb-img { width: 45px; height: 45px; object-fit: cover; border-radius: 5px; cursor: pointer; }
+        .color-block { width: 14px; height: 24px; border-radius: 4px; display: inline-block; }
+        .bg-red { background-color: #dc3545 !important; }
+        .bg-yellow { background-color: #ffc107 !important; }
+        .bg-green { background-color: #198754 !important; }
         .table>tbody>tr>td, .table>thead>tr>th { vertical-align: middle !important; }
     </style>
 </head>
@@ -18,17 +24,11 @@
 <!-- หน้า Login & Register -->
 <div id="authOverlay" class="container mt-5" style="max-width: 420px;">
     <div class="card p-4 shadow-lg border-0">
-        <!-- Tab สลับ Login / Register -->
         <ul class="nav nav-pills nav-justified mb-3" id="authTab">
-            <li class="nav-item">
-                <button class="nav-link active fw-bold" onclick="switchAuthMode('login')">เข้าสู่ระบบ</button>
-            </li>
-            <li class="nav-item">
-                <button class="nav-link fw-bold" onclick="switchAuthMode('register')">สมัครสมาชิก</button>
-            </li>
+            <li class="nav-item"><button class="nav-link active fw-bold" onclick="switchAuthMode('login')">เข้าสู่ระบบ</button></li>
+            <li class="nav-item"><button class="nav-link fw-bold" onclick="switchAuthMode('register')">สมัครสมาชิก</button></li>
         </ul>
 
-        <!-- ฟอร์ม เข้าสู่ระบบ -->
         <form id="loginForm">
             <div class="mb-3">
                 <label class="form-label">ชื่อผู้ใช้งาน</label>
@@ -41,7 +41,6 @@
             <button type="submit" class="btn btn-primary w-100 py-2 fw-bold">เข้าสู่ระบบ</button>
         </form>
 
-        <!-- ฟอร์ม สมัครสมาชิก -->
         <form id="registerForm" style="display: none;">
             <div class="mb-3">
                 <label class="form-label">ตั้งชื่อผู้ใช้งาน</label>
@@ -59,7 +58,7 @@
 <!-- ระบบหลัก -->
 <div id="mainApp" class="container" style="display: none;">
     <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
-        <h2 class="text-primary fw-bold m-0">⚙️ ระบบ TPM & CMMS โรงงาน</h2>
+        <h2 class="text-primary fw-bold m-0">⚙️ ระบบจัดการ TPM & CMMS โรงงาน</h2>
         <div class="d-flex align-items-center gap-2">
             <span id="userBadge" class="badge bg-secondary fs-6"></span>
             <button class="btn btn-outline-secondary btn-sm" data-bs-toggle="modal" data-bs-target="#profileModal">🔑 เปลี่ยนรหัสผ่าน</button>
@@ -67,12 +66,16 @@
         </div>
     </div>
     
+    <!-- เมนูแท็บทั้งหมด -->
     <ul class="nav nav-tabs mb-4 flex-wrap" id="tpmTab" role="tablist">
         <li class="nav-item"><button class="nav-link active fw-bold" data-bs-toggle="tab" data-bs-target="#dashboardSection" type="button" onclick="loadDashboard()">📈 แดชบอร์ด</button></li>
         <li class="nav-item"><button class="nav-link fw-bold" data-bs-toggle="tab" data-bs-target="#machineSection" type="button">🏭 จัดการเครื่องจักร</button></li>
+        <li class="nav-item"><button class="nav-link fw-bold text-danger" data-bs-toggle="tab" data-bs-target="#overdueSection" type="button" onclick="loadOverduePlan()">🚨 งานเลยกำหนด</button></li>
+        <li class="nav-item"><button class="nav-link fw-bold text-primary" data-bs-toggle="tab" data-bs-target="#masterSection" type="button" onclick="loadMasterPlan()">📊 Master Plan (แผนทั้งหมด)</button></li>
         <li class="nav-item"><button class="nav-link fw-bold text-warning" data-bs-toggle="tab" data-bs-target="#breakdownSection" type="button" onclick="loadBreakdowns()">🛠️ ประวัติเครื่องเสีย</button></li>
         <li class="nav-item"><button class="nav-link fw-bold text-info" data-bs-toggle="tab" data-bs-target="#spareSection" type="button" onclick="loadSpareParts()">📦 คลังอะไหล่</button></li>
-        <li class="nav-item admin-only" style="display: none;"><button class="nav-link fw-bold text-danger" data-bs-toggle="tab" data-bs-target="#userManageSection" type="button" onclick="loadUserManagement()">👥 จัดการสิทธิ์สมาชิก (Admin Only)</button></li>
+        <li class="nav-item"><button class="nav-link fw-bold text-success" data-bs-toggle="tab" data-bs-target="#historySection" type="button" onclick="loadHistoryPlan()">✅ ประวัติงานเสร็จ</button></li>
+        <li class="nav-item admin-only" style="display: none;"><button class="nav-link fw-bold text-dark" data-bs-toggle="tab" data-bs-target="#userManageSection" type="button" onclick="loadUserManagement()">👥 จัดการสิทธิ์สมาชิก</button></li>
     </ul>
 
     <div class="tab-content">
@@ -85,7 +88,7 @@
             </div>
             <div class="row">
                 <div class="col-md-6"><div class="card p-3"><h5 class="text-center">สัดส่วนสถานะ TPM</h5><canvas id="tpmPieChart" style="max-height: 250px;"></canvas></div></div>
-                <div class="col-md-6"><div class="card p-4 text-center"><h4>สิทธิ์ใช้งานปัจจุบันของคุณ: <span id="roleDisplay" class="text-primary fw-bold"></span></h4><p class="text-muted mt-2">สิทธิ์ User สามารถเข้าชมและดาวน์โหลดข้อมูลได้ / สิทธิ์ Member และ Admin สามารถเพิ่มและแก้ไขข้อมูลได้</p></div></div>
+                <div class="col-md-6"><div class="card p-4 text-center"><h4>สิทธิ์ใช้งานของคุณ: <span id="roleDisplay" class="text-primary fw-bold"></span></h4><p class="text-muted mt-2">สิทธิ์ User ดูและโหลดข้อมูลได้ / สิทธิ์ Member และ Admin เพิ่ม-แก้ไขข้อมูลได้</p></div></div>
             </div>
         </div>
 
@@ -98,7 +101,6 @@
                         <select id="machineDropdown" class="form-select border-primary fw-bold mb-3" onchange="onMachineDropdownChange(this.value)"></select>
                         <button id="btnDeleteMachine" class="btn btn-outline-danger btn-sm w-100 mb-3 admin-only" style="display:none;" onclick="deleteCurrentMachine()">🗑️ ลบเครื่องนี้</button>
                         
-                        <!-- ฟอร์มเพิ่มเครื่องจักร (Member & Admin) -->
                         <div class="write-permission" style="display:none;">
                             <hr>
                             <h6 class="fw-bold">➕ เพิ่มเครื่องจักรใหม่</h6>
@@ -116,7 +118,6 @@
                         <h4 id="selectedMachineTitle" class="fw-bold m-0"></h4>
                         <small id="selectedMachineLoc" class="text-muted d-block mb-3"></small>
 
-                        <!-- ฟอร์มเพิ่มแผน TPM (Member & Admin) -->
                         <form id="planForm" class="mb-4 bg-light p-3 rounded write-permission" style="display:none;">
                             <h6 class="fw-bold">➕ เพิ่มแผน TPM ใหม่</h6>
                             <input type="text" id="taskName" class="form-control mb-2" placeholder="ชื่องานบำรุงรักษา" required>
@@ -145,11 +146,46 @@
             </div>
         </div>
 
+        <!-- แท็บงานเลยกำหนด -->
+        <div class="tab-pane fade" id="overdueSection" role="tabpanel">
+            <div class="card p-4 border-danger">
+                <h4 class="text-danger mb-3">🚨 รายการงานบำรุงรักษาที่เลยกำหนดการ</h4>
+                <div class="table-responsive">
+                    <table class="table table-bordered text-center">
+                        <thead class="table-danger">
+                            <tr><th>กำหนดเดิม</th><th>เครื่องจักร</th><th>ชื่องาน</th><th>รอบซ้ำ</th><th>สถานะ</th><th>หมายเหตุ</th><th>รูป</th></tr>
+                        </thead>
+                        <tbody id="overdueTableBody"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- แท็บ Master Plan ทั้งหมด -->
+        <div class="tab-pane fade" id="masterSection" role="tabpanel">
+            <div class="card p-4">
+                <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+                    <h4 class="text-primary fw-bold m-0">📊 ตาราง Master Plan ทั้งหมด</h4>
+                    <div class="d-flex gap-2">
+                        <button class="btn btn-success" onclick="downloadMasterPlanExcel()">📥 โหลด Excel</button>
+                        <button class="btn btn-danger" onclick="downloadMasterPlanPDF()">📥 โหลด PDF</button>
+                    </div>
+                </div>
+                <div class="table-responsive">
+                    <table class="table table-bordered text-center" id="masterTable">
+                        <thead class="table-dark">
+                            <tr><th>สถานะสี</th><th>วันที่กำหนด</th><th>เครื่องจักร</th><th>ชื่องาน</th><th>รอบซ้ำ</th><th>สถานะ</th><th>หมายเหตุ</th><th>รูป</th></tr>
+                        </thead>
+                        <tbody id="masterTableBody"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
         <!-- ประวัติเครื่องเสีย -->
         <div class="tab-pane fade" id="breakdownSection" role="tabpanel">
             <div class="card p-4">
                 <h4 class="text-warning mb-3">🛠️ บันทึกประวัติเครื่องจักรเสีย</h4>
-                
                 <form id="breakdownForm" class="bg-light p-3 rounded mb-4 write-permission" style="display:none;">
                     <div class="row">
                         <div class="col-md-3 mb-2"><label class="small">เครื่องจักร</label><select id="bdMachineId" class="form-select" required></select></div>
@@ -161,7 +197,6 @@
                     </div>
                     <button type="submit" class="btn btn-warning w-100 fw-bold mt-2">บันทึกประวัติ</button>
                 </form>
-
                 <div class="table-responsive">
                     <table class="table table-bordered text-center">
                         <thead class="table-warning">
@@ -194,6 +229,21 @@
             </div>
         </div>
 
+        <!-- ประวัติงานเสร็จ -->
+        <div class="tab-pane fade" id="historySection" role="tabpanel">
+            <div class="card p-4">
+                <h4 class="text-success mb-3">✅ ประวัติงานบำรุงรักษาที่เสร็จสิ้นแล้ว</h4>
+                <div class="table-responsive">
+                    <table class="table table-bordered text-center">
+                        <thead class="table-success">
+                            <tr><th>กำหนดเดิม</th><th>เครื่องจักร</th><th>ชื่องาน</th><th>รอบซ้ำ</th><th>หมายเหตุ</th><th>รูป</th></tr>
+                        </thead>
+                        <tbody id="historyTableBody"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
         <!-- แท็บจัดการสมาชิก (Admin Only) -->
         <div class="tab-pane fade admin-only" id="userManageSection" role="tabpanel" style="display:none;">
             <div class="card p-4">
@@ -211,14 +261,12 @@
     </div>
 </div>
 
-<!-- Modal เปลี่ยนรหัสผ่านตัวเอง -->
+<!-- Modal เปลี่ยนรหัสผ่าน -->
 <div class="modal fade" id="profileModal" tabindex="-1">
     <div class="modal-dialog">
         <div class="modal-content">
-            <div class="modal-header"><h5 class="modal-title">🔑 เปลี่ยนรหัสผ่านของคุณ</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
-            <div class="modal-body">
-                <input type="password" id="newProfilePass" class="form-control" placeholder="กรอกรหัสผ่านใหม่" required>
-            </div>
+            <div class="modal-header"><h5 class="modal-title">🔑 เปลี่ยนรหัสผ่าน</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+            <div class="modal-body"><input type="password" id="newProfilePass" class="form-control" placeholder="กรอกรหัสผ่านใหม่" required></div>
             <div class="modal-footer"><button type="button" class="btn btn-primary" onclick="changeMyPassword()">บันทึกรหัสผ่านใหม่</button></div>
         </div>
     </div>
@@ -282,7 +330,6 @@
         document.getElementById('userBadge').innerText = `${user.username} (${user.role.toUpperCase()})`;
         document.getElementById('roleDisplay').innerText = user.role.toUpperCase();
 
-        // ควบคุมการแสดงผลตามสิทธิ์
         const isAdmin = user.role === 'admin';
         const isMemberOrAdmin = user.role === 'admin' || user.role === 'member';
 
@@ -312,6 +359,90 @@
             bootstrap.Modal.getInstance(document.getElementById('profileModal')).hide();
         }
     }
+
+    // --- Master Plan / Overdue / History ---
+
+    async function loadMasterPlan() {
+        const res = await fetch('/api/plans-master');
+        const plans = await res.json();
+        const tbody = document.getElementById('masterTableBody');
+        tbody.innerHTML = '';
+        const today = new Date().toISOString().split('T')[0];
+
+        plans.forEach(p => {
+            const dueDate = p.next_due_date ? p.next_due_date.split('T')[0] : '';
+            let colorClass = 'bg-yellow';
+            if (p.status === 'เสร็จสิ้น') colorClass = 'bg-green';
+            else if (dueDate < today) colorClass = 'bg-red';
+
+            tbody.innerHTML += `
+                <tr>
+                    <td><span class="color-block ${colorClass}"></span></td>
+                    <td>${dueDate}</td>
+                    <td><strong>${p.machine_name}</strong> (${p.location})</td>
+                    <td class="text-start">${p.task_name}</td>
+                    <td><small class="badge bg-info text-dark">รอบ ${p.interval_months} ด.</small></td>
+                    <td><span class="badge ${p.status === 'เสร็จสิ้น' ? 'bg-success' : 'bg-warning text-dark'}">${p.status}</span></td>
+                    <td class="text-start">${p.notes || '-'}</td>
+                    <td>${p.image_url ? `<img src="${p.image_url}" class="thumb-img" onclick="window.open(this.src)">` : '-'}</td>
+                </tr>
+            `;
+        });
+    }
+
+    async function loadOverduePlan() {
+        const res = await fetch('/api/plans-overdue');
+        const plans = await res.json();
+        const tbody = document.getElementById('overdueTableBody');
+        tbody.innerHTML = '';
+
+        plans.forEach(p => {
+            tbody.innerHTML += `
+                <tr>
+                    <td class="fw-bold text-danger">${p.next_due_date ? p.next_due_date.split('T')[0] : ''}</td>
+                    <td><strong>${p.machine_name}</strong></td>
+                    <td class="text-start">${p.task_name}</td>
+                    <td><small class="badge bg-info text-dark">รอบ ${p.interval_months} ด.</small></td>
+                    <td><span class="badge bg-danger">${p.status}</span></td>
+                    <td class="text-start">${p.notes || '-'}</td>
+                    <td>${p.image_url ? `<img src="${p.image_url}" class="thumb-img" onclick="window.open(this.src)">` : '-'}</td>
+                </tr>
+            `;
+        });
+    }
+
+    async function loadHistoryPlan() {
+        const res = await fetch('/api/plans-history');
+        const plans = await res.json();
+        const tbody = document.getElementById('historyTableBody');
+        tbody.innerHTML = '';
+
+        plans.forEach(p => {
+            tbody.innerHTML += `
+                <tr>
+                    <td>${p.next_due_date ? p.next_due_date.split('T')[0] : ''}</td>
+                    <td><strong>${p.machine_name}</strong></td>
+                    <td class="text-start">${p.task_name}</td>
+                    <td><small class="badge bg-info text-dark">รอบ ${p.interval_months} ด.</small></td>
+                    <td class="text-start">${p.notes || '-'}</td>
+                    <td>${p.image_url ? `<img src="${p.image_url}" class="thumb-img" onclick="window.open(this.src)">` : '-'}</td>
+                </tr>
+            `;
+        });
+    }
+
+    function downloadMasterPlanExcel() {
+        const table = document.getElementById("masterTable");
+        const wb = XLSX.utils.table_to_book(table, {sheet: "Master Plan"});
+        XLSX.writeFile(wb, `Master_Plan_TPM_${new Date().toISOString().split('T')[0]}.xlsx`);
+    }
+
+    function downloadMasterPlanPDF() {
+        const element = document.getElementById('masterTable');
+        html2pdf().from(element).save(`Master_Plan_TPM_${new Date().toISOString().split('T')[0]}.pdf`);
+    }
+
+    // --- ส่วนการจัดการอื่นๆ ---
 
     async function loadUserManagement() {
         if (currentUser.role !== 'admin') return;
@@ -346,8 +477,6 @@
         alert('อัปเดตสิทธิ์เรียบร้อยแล้ว');
         loadUserManagement();
     }
-
-    // --- ฟังก์ชันการทำงานทั่วไป ---
 
     async function loadDashboard() {
         const res = await fetch('/api/dashboard-summary');

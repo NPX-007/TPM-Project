@@ -83,9 +83,8 @@ async function initDB() {
 }
 initDB();
 
-// --- API ยืนยันตัวตน และจัดการผู้ใช้งาน ---
+// --- API จัดการผู้ใช้งาน ---
 
-// สมัครสมาชิกใหม่ (ค่าเริ่มต้นเป็น 'user')
 app.post('/api/register', async (req, res) => {
     const { username, password } = req.body;
     try {
@@ -100,7 +99,6 @@ app.post('/api/register', async (req, res) => {
     }
 });
 
-// เข้าสู่ระบบ
 app.post('/api/login', async (req, res) => {
     const { username, password } = req.body;
     try {
@@ -115,39 +113,28 @@ app.post('/api/login', async (req, res) => {
     }
 });
 
-// ดึงรายการผู้ใช้ทั้งหมด (สำหรับ Admin)
 app.get('/api/users', async (req, res) => {
     try {
         const result = await pool.query('SELECT id, username, role FROM users ORDER BY id ASC');
         res.json(result.rows);
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
+    } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// เปลี่ยนสถานะ/สิทธิ์สมาชิก (สำหรับ Admin เท่านั้น)
 app.patch('/api/users/:id/role', async (req, res) => {
-    const { role } = req.body;
     try {
-        await pool.query('UPDATE users SET role = $1 WHERE id = $2', [role, req.params.id]);
+        await pool.query('UPDATE users SET role = $1 WHERE id = $2', [req.body.role, req.params.id]);
         res.json({ success: true });
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
+    } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// ผู้ใช้แก้ไขข้อมูล/รหัสผ่านของตนเอง
 app.patch('/api/users/profile', async (req, res) => {
-    const { userId, newPassword } = req.body;
     try {
-        await pool.query('UPDATE users SET password = $1 WHERE id = $2', [newPassword, userId]);
+        await pool.query('UPDATE users SET password = $1 WHERE id = $2', [req.body.newPassword, req.body.userId]);
         res.json({ success: true, message: 'อัปเดตรหัสผ่านสำเร็จ' });
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
+    } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// --- API การทำงานหลักระบบ TPM ---
+// --- API TPM & CMMS ---
 
 app.get('/api/dashboard-summary', async (req, res) => {
     try {
@@ -162,9 +149,7 @@ app.get('/api/dashboard-summary', async (req, res) => {
             lowStockCount: lowStockRes.rows[0].count || 0,
             plans: plansRes.rows
         });
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
+    } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 app.get('/api/machines', async (req, res) => {
@@ -191,6 +176,47 @@ app.delete('/api/machines/:id', async (req, res) => {
 app.get('/api/plans/:machineId', async (req, res) => {
     try {
         const result = await pool.query('SELECT * FROM tpm_plans WHERE machine_id = $1 ORDER BY next_due_date ASC', [req.params.machineId]);
+        res.json(result.rows);
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// ดึง Master Plan ทั้งหมด
+app.get('/api/plans-master', async (req, res) => {
+    try {
+        const result = await pool.query(`
+            SELECT p.*, m.name as machine_name, m.location 
+            FROM tpm_plans p 
+            JOIN machines m ON p.machine_id = m.id 
+            ORDER BY p.next_due_date ASC
+        `);
+        res.json(result.rows);
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// ดึงงานเลยกำหนด (Overdue)
+app.get('/api/plans-overdue', async (req, res) => {
+    try {
+        const result = await pool.query(`
+            SELECT p.*, m.name as machine_name, m.location 
+            FROM tpm_plans p 
+            JOIN machines m ON p.machine_id = m.id 
+            WHERE p.status != 'เสร็จสิ้น' AND p.next_due_date < CURRENT_DATE 
+            ORDER BY p.next_due_date ASC
+        `);
+        res.json(result.rows);
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// ดึงประวัติงานที่ทำเสร็จแล้ว (History)
+app.get('/api/plans-history', async (req, res) => {
+    try {
+        const result = await pool.query(`
+            SELECT p.*, m.name as machine_name, m.location 
+            FROM tpm_plans p 
+            JOIN machines m ON p.machine_id = m.id 
+            WHERE p.status = 'เสร็จสิ้น' 
+            ORDER BY p.next_due_date DESC
+        `);
         res.json(result.rows);
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
