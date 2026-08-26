@@ -295,7 +295,6 @@
                             <tr>
                                 <th>ID</th>
                                 <th>ชื่อผู้ใช้งาน</th>
-                                <th>รหัสผ่าน</th>
                                 <th>สิทธิ์ปัจจุบัน</th>
                                 <th>เปลี่ยนสิทธิ์</th>
                                 <th>จัดการ</th>
@@ -784,15 +783,10 @@
             const tbody = document.getElementById('userTableBody');
 
             tbody.innerHTML = users.map(u => {
-                const pwdText = (u.password !== undefined && u.password !== null && u.password !== '') ? String(u.password) : '(ไม่มีข้อมูลใน DB)';
                 return `
                     <tr>
                         <td>${u.id}</td>
                         <td class="fw-bold">${escapeHtml(u.username)}</td>
-                        <td>
-                            <span id="pwdDisplay-${u.id}" class="font-monospace">••••••••</span>
-                            <button class="btn btn-sm btn-link p-0 ms-1 text-decoration-none" title="ดู/ซ่อนรหัสผ่าน" onclick="togglePasswordVisibility(${u.id}, \`${escapeHtml(pwdText)}\`)">👁️</button>
-                        </td>
                         <td><span class="badge ${u.role === 'admin' ? 'bg-danger' : u.role === 'member' ? 'bg-success' : 'bg-secondary'}">${escapeHtml(u.role)}</span></td>
                         <td>
                             <select class="form-select form-select-sm w-auto mx-auto" onchange="changeUserRole(${u.id}, this.value)">
@@ -809,16 +803,6 @@
             }).join('');
         } catch (err) {
             console.error('Failed to load users:', err);
-        }
-    }
-
-    function togglePasswordVisibility(userId, plainPassword) {
-        const el = document.getElementById(`pwdDisplay-${userId}`);
-        if (!el) return;
-        if (el.innerText === '••••••••') {
-            el.innerText = plainPassword;
-        } else {
-            el.innerText = '••••••••';
         }
     }
 

@@ -79,7 +79,7 @@ app.post('/api/register', async (req, res) => {
 
 app.get('/api/users', async (req, res) => {
     try {
-        const { rows } = await db.query('SELECT id, username, password, role FROM users ORDER BY id ASC');
+        const { rows } = await db.query('SELECT id, username, role FROM users ORDER BY id ASC');
         res.json(rows);
     } catch (err) {
         console.error('Get Users Error:', err);
