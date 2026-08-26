@@ -1015,8 +1015,6 @@
 
     async function updatePlanStatus(id, status, intervalMonths = 1) {
         let actual_date = null;
-        let next_due_date = null;
-        let targetStatus = status;
 
         if (status === 'เสร็จสิ้น') {
             const today = new Date().toISOString().split('T')[0];
@@ -1027,24 +1025,6 @@
                 return;
             }
             if (!actual_date.trim()) actual_date = today;
-
-            // คำนวณวันกำหนดครั้งถัดไปโดยนับจากวันที่ดำเนินการจริง + จำนวนเดือนรอบซ้ำ
-            const parts = actual_date.split('-');
-            if (parts.length === 3) {
-                const year = parseInt(parts[0], 10);
-                const month = parseInt(parts[1], 10) - 1;
-                const day = parseInt(parts[2], 10);
-                const calcDate = new Date(year, month, day);
-                calcDate.setMonth(calcDate.getMonth() + parseInt(intervalMonths || 1));
-
-                const yyyy = calcDate.getFullYear();
-                const mm = String(calcDate.getMonth() + 1).padStart(2, '0');
-                const dd = String(calcDate.getDate()).padStart(2, '0');
-                next_due_date = `${yyyy}-${mm}-${dd}`;
-            }
-
-            // เมื่อบันทึกงานเสร็จแล้ว สถานะใน Master Plan สำหรับรอบใหม่จะปรับกลับเป็น "รอดำเนินการ"
-            targetStatus = 'รอดำเนินการ';
         }
 
         try {
@@ -1052,10 +1032,8 @@
                 method: 'PATCH',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({
-                    status: targetStatus,
-                    completed_status: status,
-                    actual_date: actual_date,
-                    next_due_date: next_due_date
+                    status: status,
+                    actual_date: actual_date
                 })
             });
             if (currentMachineId) loadPlans(currentMachineId);
