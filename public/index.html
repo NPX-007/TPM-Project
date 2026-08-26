@@ -125,7 +125,7 @@
                             <div class="row">
                                 <div class="col-md-6 mb-2"><label class="small text-muted">กำหนดวันที่:</label><input type="date" id="dueDate" class="form-control" required></div>
                                 <div class="col-md-6 mb-2"><label class="small text-muted">รอบวนซ้ำ:</label>
-                                    <select id="intervalMonths" class="form-select"><option value="1">ทุก 1 เดือน</option><option value="3">ทุก 3 เดือน</option><option value="6">ทุก 6 เดือน</option><option value="12">ทุก 1 ปี</option></select>
+                                    <select id="intervalMonths" class="form-select"><option value="1">ทุก 1 เดือน</option><option value="3">ทุก 3 เดือน</option><option value="6">ทุก 6 เดือน</option><option value="12">ทุก 1 ปี</option><option value="0">ไม่ทำซ้ำ (ครั้งเดียว)</option></select>
                                 </div>
                             </div>
                             <label class="small text-muted">เลือกอะไหล่ในคลังที่ต้องใช้ (ถ้ามี):</label>
@@ -277,6 +277,7 @@
                                 <th>อะไหล่ที่ใช้</th>
                                 <th>หมายเหตุ</th>
                                 <th>รูป</th>
+                                <th>จัดการ</th>
                             </tr>
                         </thead>
                         <tbody id="historyTableBody"></tbody>
@@ -387,6 +388,12 @@
             .replace(/>/g, "&gt;")
             .replace(/"/g, "&quot;")
             .replace(/'/g, "&#039;");
+    }
+
+    // Helper แสดงข้อความรอบซ้ำ - ถ้า interval_months เป็น 0 หมายถึงงานครั้งเดียวไม่ทำซ้ำ
+    function intervalLabel(intervalMonths) {
+        const n = parseInt(intervalMonths) || 0;
+        return n > 0 ? `รอบ ${n} ด.` : 'ไม่ทำซ้ำ';
     }
 
     window.onload = () => {
@@ -538,7 +545,7 @@
                         <td>${dueDate}</td>
                         <td><strong>${escapeHtml(p.machine_name)}</strong> (${escapeHtml(p.location)})</td>
                         <td class="text-start">${escapeHtml(p.task_name)}</td>
-                        <td><small class="badge bg-info text-dark">รอบ ${p.interval_months} ด.</small></td>
+                        <td><small class="badge bg-info text-dark">${intervalLabel(p.interval_months)}</small></td>
                         <td>${p.spare_part_name ? `<span class="badge bg-info text-dark">📦 ${escapeHtml(p.spare_part_name)}</span>` : '-'}</td>
                         <td>
                             ${canEdit ? `
@@ -695,7 +702,7 @@
                     <td class="fw-bold text-danger">${p.next_due_date ? p.next_due_date.split('T')[0] : ''}</td>
                     <td><strong>${escapeHtml(p.machine_name)}</strong></td>
                     <td class="text-start">${escapeHtml(p.task_name)}</td>
-                    <td><small class="badge bg-info text-dark">รอบ ${p.interval_months} ด.</small></td>
+                    <td><small class="badge bg-info text-dark">${intervalLabel(p.interval_months)}</small></td>
                     <td>${p.spare_part_name ? `<span class="badge bg-info text-dark">📦 ${escapeHtml(p.spare_part_name)}</span>` : '-'}</td>
                     <td><span class="badge bg-danger">${escapeHtml(p.status)}</span></td>
                     <td class="text-start">${escapeHtml(p.notes) || '-'}</td>
@@ -716,6 +723,8 @@
             const selectAllCb = document.getElementById('selectAllHistoryCb');
             if (selectAllCb) selectAllCb.checked = false;
 
+            const canEdit = currentUser && (currentUser.role === 'admin' || currentUser.role === 'member');
+
             tbody.innerHTML = plans.map(p => {
                 const actualDate = p.actual_date ? p.actual_date.split('T')[0] : '-';
                 return `
@@ -725,10 +734,11 @@
                         <td><span class="badge bg-success">${actualDate}</span></td>
                         <td><strong>${escapeHtml(p.machine_name)}</strong></td>
                         <td class="text-start">${escapeHtml(p.task_name)}</td>
-                        <td><small class="badge bg-info text-dark">รอบ ${p.interval_months} ด.</small></td>
+                        <td><small class="badge bg-info text-dark">${intervalLabel(p.interval_months)}</small></td>
                         <td>${p.spare_part_name ? `<span class="badge bg-info text-dark">📦 ${escapeHtml(p.spare_part_name)}</span>` : '-'}</td>
                         <td class="text-start">${escapeHtml(p.notes) || '-'}</td>
                         <td>${p.image_url ? `<img src="${escapeHtml(p.image_url)}" class="thumb-img" onclick="window.open(this.src)">` : '-'}</td>
+                        <td>${canEdit ? `<button class="btn btn-sm btn-outline-danger" onclick="deleteHistoryItem(${p.id})">🗑️ ลบ</button>` : '-'}</td>
                     </tr>
                 `;
             }).join('');
@@ -973,7 +983,7 @@
                 <tr>
                     <td class="text-start">${escapeHtml(p.task_name)}</td>
                     <td>${p.next_due_date ? p.next_due_date.split('T')[0] : ''}</td>
-                    <td><small class="badge bg-info text-dark">รอบ ${p.interval_months} ด.</small></td>
+                    <td><small class="badge bg-info text-dark">${intervalLabel(p.interval_months)}</small></td>
                     <td>${p.spare_part_name ? `<span class="badge bg-info text-dark">📦 ${escapeHtml(p.spare_part_name)}</span>` : '-'}</td>
                     <td>
                         ${canEdit ? `
@@ -1055,6 +1065,18 @@
                 loadMasterPlan();
             } catch (err) {
                 alert('เกิดข้อผิดพลาดในการลบแผนงาน');
+            }
+        }
+    }
+
+    async function deleteHistoryItem(id) {
+        if (confirm('ต้องการลบประวัติงานเสร็จรายการนี้ใช่หรือไม่?')) {
+            try {
+                await fetch(`/api/plans/${id}`, { method: 'DELETE' });
+                loadHistoryPlan();
+                loadDashboard();
+            } catch (err) {
+                alert('เกิดข้อผิดพลาดในการลบประวัติงานเสร็จ');
             }
         }
     }

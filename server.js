@@ -221,6 +221,7 @@ app.get('/api/plans-master', async (req, res) => {
             FROM plans p
             JOIN machines m ON p.machine_id = m.id
             LEFT JOIN spare_parts s ON p.spare_part_id = s.id
+            WHERE p.status != 'เสร็จสิ้น'
             ORDER BY p.next_due_date ASC
         `);
         res.json(rows);
@@ -273,7 +274,7 @@ app.get('/api/plans/:machineId', async (req, res) => {
             SELECT p.*, s.part_name as spare_part_name 
             FROM plans p
             LEFT JOIN spare_parts s ON p.spare_part_id = s.id
-            WHERE p.machine_id = $1
+            WHERE p.machine_id = $1 AND p.status != 'เสร็จสิ้น'
             ORDER BY p.id DESC
         `, [machineId]);
         res.json(rows);
@@ -289,7 +290,8 @@ app.post('/api/plans', upload.single('image'), async (req, res) => {
         const image_url = req.file ? `/uploads/${req.file.filename}` : null;
         
         const parsedMachineId = parseInt(machine_id);
-        const parsedInterval = parseInt(interval_months) || 1;
+        const parsedIntervalRaw = parseInt(interval_months);
+        const parsedInterval = Number.isNaN(parsedIntervalRaw) ? 1 : parsedIntervalRaw;
         const parsedSparePartId = (spare_part_id && spare_part_id !== '' && spare_part_id !== 'null' && spare_part_id !== 'undefined') 
             ? parseInt(spare_part_id) 
             : null;
@@ -331,25 +333,29 @@ app.patch('/api/plans/:id/status', async (req, res) => {
                 // 3. เปลี่ยนสถานะรายการนี้เป็น 'เสร็จสิ้น' พร้อมบันทึกวันเสร็จจริง (เพื่อให้อยู่ในตารางประวัติ)
                 await client.query('UPDATE plans SET status = $1, actual_date = $2 WHERE id = $3', [status, actualDateStr, id]);
 
-                // 4. คำนวณวันกำหนดรอบถัดไป (Next Due Date = วันที่ทำเสร็จจริง + รอบเดือน)
-                const intervalMonths = parseInt(plan.interval_months) || 1;
-                const nextDueDate = new Date(actualDateStr);
-                nextDueDate.setMonth(nextDueDate.getMonth() + intervalMonths);
-                const nextDueDateStr = nextDueDate.toISOString().split('T')[0];
+                // 4. ถ้ามีรอบซ้ำ (interval_months > 0) ให้สร้างงานรอบถัดไปโดยนับจากวันที่เสร็จจริง
+                //    ถ้าไม่มีรอบซ้ำ (interval_months = 0) จะไม่สร้างงานใหม่ - งานนี้จะหายไปจาก Master Plan
+                //    และเหลือแค่บันทึกไว้ในประวัติงานเสร็จเท่านั้น
+                const intervalMonths = parseInt(plan.interval_months) || 0;
+                if (intervalMonths > 0) {
+                    const nextDueDate = new Date(actualDateStr);
+                    nextDueDate.setMonth(nextDueDate.getMonth() + intervalMonths);
+                    const nextDueDateStr = nextDueDate.toISOString().split('T')[0];
 
-                // 5. บันทึกงานรายการใหม่เข้าตารางเพื่อเริ่มนับรอบถัดไป (สถานะ 'รอดำเนินการ')
-                await client.query(`
-                    INSERT INTO plans (machine_id, task_name, next_due_date, interval_months, spare_part_id, notes, image_url, status)
-                    VALUES ($1, $2, $3, $4, $5, $6, $7, 'รอดำเนินการ')
-                `, [
-                    plan.machine_id,
-                    plan.task_name,
-                    nextDueDateStr,
-                    intervalMonths,
-                    plan.spare_part_id,
-                    plan.notes,
-                    plan.image_url
-                ]);
+                    // 5. บันทึกงานรายการใหม่เข้าตารางเพื่อเริ่มนับรอบถัดไป (สถานะ 'รอดำเนินการ')
+                    await client.query(`
+                        INSERT INTO plans (machine_id, task_name, next_due_date, interval_months, spare_part_id, notes, image_url, status)
+                        VALUES ($1, $2, $3, $4, $5, $6, $7, 'รอดำเนินการ')
+                    `, [
+                        plan.machine_id,
+                        plan.task_name,
+                        nextDueDateStr,
+                        intervalMonths,
+                        plan.spare_part_id,
+                        plan.notes,
+                        plan.image_url
+                    ]);
+                }
             }
         } else {
             // ถ้ายกเลิกหรือย้อนกลับสถานะ
