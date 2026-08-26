@@ -3,30 +3,40 @@ const { Pool } = require('pg');
 const multer = require('multer');
 const path = require('path');
 const cors = require('cors');
-const fs = require('fs');
+const { createClient } = require('@supabase/supabase-js');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-
-// ตรวจสอบและสร้างโฟลเดอร์ uploads อัตโนมัติถ้ายังไม่มีในระบบ
-const uploadDir = path.join(__dirname, 'uploads');
-if (!fs.existsSync(uploadDir)) {
-    fs.mkdirSync(uploadDir, { recursive: true });
-}
 
 // ตั้งค่า Middleware
 app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static('public'));
-app.use('/uploads', express.static(uploadDir));
 
-// ตั้งค่า File Upload ด้วย Multer
-const storage = multer.diskStorage({
-    destination: (req, file, cb) => cb(null, uploadDir),
-    filename: (req, file, cb) => cb(null, Date.now() + path.extname(file.originalname))
-});
-const upload = multer({ storage });
+// ตั้งค่า File Upload ด้วย Multer - เก็บไฟล์ไว้ใน memory ชั่วคราว แล้วอัพขึ้น Supabase Storage
+// (ไม่เก็บไว้ที่ดิสก์ของ Render เพราะดิสก์จะถูกล้างทุกครั้งที่ deploy ใหม่ ทำให้รูปหาย)
+const upload = multer({ storage: multer.memoryStorage() });
+
+// เชื่อมต่อ Supabase Storage สำหรับเก็บไฟล์รูปภาพแบบถาวร
+const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
+const SUPABASE_BUCKET = process.env.SUPABASE_BUCKET || 'tpm-uploads';
+
+// อัพโหลดไฟล์รูปขึ้น Supabase Storage แล้วคืนค่า URL สาธารณะสำหรับเก็บลง DB
+async function uploadImageToSupabase(file) {
+    if (!file) return null;
+    const fileExt = path.extname(file.originalname);
+    const fileName = `${Date.now()}-${Math.random().toString(36).slice(2)}${fileExt}`;
+
+    const { error } = await supabase.storage
+        .from(SUPABASE_BUCKET)
+        .upload(fileName, file.buffer, { contentType: file.mimetype });
+
+    if (error) throw error;
+
+    const { data } = supabase.storage.from(SUPABASE_BUCKET).getPublicUrl(fileName);
+    return data.publicUrl;
+}
 
 // เชื่อมต่อฐานข้อมูล PostgreSQL (Supabase)
 const db = new Pool({
@@ -287,7 +297,7 @@ app.get('/api/plans/:machineId', async (req, res) => {
 app.post('/api/plans', upload.single('image'), async (req, res) => {
     try {
         const { machine_id, task_name, next_due_date, interval_months, spare_part_id, notes } = req.body;
-        const image_url = req.file ? `/uploads/${req.file.filename}` : null;
+        const image_url = req.file ? await uploadImageToSupabase(req.file) : null;
         
         const parsedMachineId = parseInt(machine_id);
         const parsedIntervalRaw = parseInt(interval_months);
@@ -323,7 +333,7 @@ app.put('/api/plans/:id', upload.single('image'), async (req, res) => {
         const cleanNotes = (notes && notes.trim() !== '') ? notes : null;
 
         if (req.file) {
-            const image_url = `/uploads/${req.file.filename}`;
+            const image_url = await uploadImageToSupabase(req.file);
             await db.query(`
                 UPDATE plans SET task_name = $1, next_due_date = $2, interval_months = $3, spare_part_id = $4, notes = $5, image_url = $6
                 WHERE id = $7
