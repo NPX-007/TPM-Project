@@ -372,6 +372,58 @@
     </div>
 </div>
 
+<!-- Modal แก้ไขรายละเอียดงานแผน TPM -->
+<div class="modal fade" id="editPlanModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">📝 แก้ไขรายละเอียดงาน TPM</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="editPlanId">
+                <div class="mb-3">
+                    <label class="form-label small fw-bold">ชื่องานบำรุงรักษา</label>
+                    <input type="text" id="editPlanTaskName" class="form-control" required>
+                </div>
+                <div class="row">
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label small fw-bold">กำหนดวันที่</label>
+                        <input type="date" id="editPlanDueDate" class="form-control" required>
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label small fw-bold">รอบวนซ้ำ</label>
+                        <select id="editPlanInterval" class="form-select">
+                            <option value="1">ทุก 1 เดือน</option>
+                            <option value="3">ทุก 3 เดือน</option>
+                            <option value="6">ทุก 6 เดือน</option>
+                            <option value="12">ทุก 1 ปี</option>
+                            <option value="0">ไม่ทำซ้ำ (ครั้งเดียว)</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label small fw-bold">เลือกอะไหล่ในคลังที่ต้องใช้ (ถ้ามี)</label>
+                    <select id="editPlanSparePart" class="form-select"></select>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label small fw-bold">หมายเหตุ / รายละเอียดงานเพิ่มเติม</label>
+                    <textarea id="editPlanNotes" class="form-control"></textarea>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label small fw-bold">เปลี่ยนรูปภาพ (ถ้าต้องการ)</label>
+                    <input type="file" id="editPlanImage" class="form-control" accept="image/*">
+                    <small class="text-muted">ถ้าไม่เลือกไฟล์ใหม่ รูปเดิมจะยังคงอยู่</small>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">ยกเลิก</button>
+                <button type="button" class="btn btn-primary" onclick="submitEditPlan()">บันทึกการแก้ไข</button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 <script>
     let currentUser = null;
@@ -957,19 +1009,24 @@
         }
     };
 
-    async function loadSpareDropdown() {
+    async function populateSparePartSelect(selectId, selectedId) {
         try {
             const res = await fetch('/api/spare-parts');
             const parts = await res.json();
-            const select = document.getElementById('taskSparePart');
+            const select = document.getElementById(selectId);
             let options = `<option value="">-- เลือกอะไหล่ที่ต้องใช้ (ถ้ามี) --</option>`;
             parts.forEach(p => {
-                options += `<option value="${p.id}">${escapeHtml(p.part_name)} (คงเหลือ: ${p.stock_qty})</option>`;
+                const isSelected = selectedId && parseInt(selectedId) === p.id ? 'selected' : '';
+                options += `<option value="${p.id}" ${isSelected}>${escapeHtml(p.part_name)} (คงเหลือ: ${p.stock_qty})</option>`;
             });
             select.innerHTML = options;
         } catch (err) {
             console.error('Failed to load spare dropdown:', err);
         }
+    }
+
+    async function loadSpareDropdown() {
+        populateSparePartSelect('taskSparePart');
     }
 
     async function loadPlans(machineId) {
@@ -994,7 +1051,17 @@
                         </select>` : `<span class="badge bg-secondary">${escapeHtml(p.status)}</span>`}
                     </td>
                     <td>${p.image_url ? `<img src="${escapeHtml(p.image_url)}" class="thumb-img" onclick="window.open(this.src)">` : '-'}</td>
-                    <td>${currentUser && currentUser.role === 'admin' ? `<button class="btn btn-sm btn-outline-danger" onclick="deletePlan(${p.id})">ลบ</button>` : '-'}</td>
+                    <td>
+                        ${canEdit ? `<button class="btn btn-sm btn-outline-primary me-1"
+                            data-id="${p.id}"
+                            data-name="${escapeHtml(p.task_name)}"
+                            data-due="${p.next_due_date ? p.next_due_date.split('T')[0] : ''}"
+                            data-interval="${p.interval_months}"
+                            data-spare="${p.spare_part_id || ''}"
+                            data-notes="${escapeHtml(p.notes || '')}"
+                            onclick="handleEditPlanClick(this)">แก้ไข</button>` : ''}
+                        ${currentUser && currentUser.role === 'admin' ? `<button class="btn btn-sm btn-outline-danger" onclick="deletePlan(${p.id})">ลบ</button>` : (!canEdit ? '-' : '')}
+                    </td>
                 </tr>
             `).join('');
         } catch (err) {
@@ -1078,6 +1145,56 @@
             } catch (err) {
                 alert('เกิดข้อผิดพลาดในการลบประวัติงานเสร็จ');
             }
+        }
+    }
+
+    function handleEditPlanClick(btn) {
+        const id = btn.getAttribute('data-id');
+        const name = btn.getAttribute('data-name');
+        const due = btn.getAttribute('data-due');
+        const interval = btn.getAttribute('data-interval');
+        const spare = btn.getAttribute('data-spare');
+        const notes = btn.getAttribute('data-notes');
+        openEditPlanModal(id, name, due, interval, spare, notes);
+    }
+
+    function openEditPlanModal(id, name, due, interval, spareId, notes) {
+        document.getElementById('editPlanId').value = id;
+        document.getElementById('editPlanTaskName').value = name;
+        document.getElementById('editPlanDueDate').value = due;
+        document.getElementById('editPlanInterval').value = interval;
+        document.getElementById('editPlanNotes').value = notes;
+        document.getElementById('editPlanImage').value = '';
+        populateSparePartSelect('editPlanSparePart', spareId);
+        const modal = new bootstrap.Modal(document.getElementById('editPlanModal'));
+        modal.show();
+    }
+
+    async function submitEditPlan() {
+        const id = document.getElementById('editPlanId').value;
+        try {
+            const formData = new FormData();
+            formData.append('task_name', document.getElementById('editPlanTaskName').value);
+            formData.append('next_due_date', document.getElementById('editPlanDueDate').value);
+            formData.append('interval_months', document.getElementById('editPlanInterval').value);
+            formData.append('spare_part_id', document.getElementById('editPlanSparePart').value);
+            formData.append('notes', document.getElementById('editPlanNotes').value);
+            const img = document.getElementById('editPlanImage').files[0];
+            if (img) formData.append('image', img);
+
+            const res = await fetch(`/api/plans/${id}`, { method: 'PUT', body: formData });
+            if (res.ok) {
+                const modalEl = document.getElementById('editPlanModal');
+                const modalInstance = bootstrap.Modal.getInstance(modalEl);
+                if (modalInstance) modalInstance.hide();
+                if (currentMachineId) loadPlans(currentMachineId);
+                loadMasterPlan();
+                loadDashboard();
+            } else {
+                alert('เกิดข้อผิดพลาดในการแก้ไขงาน');
+            }
+        } catch (err) {
+            alert('ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้');
         }
     }
 

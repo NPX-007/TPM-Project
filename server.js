@@ -309,6 +309,39 @@ app.post('/api/plans', upload.single('image'), async (req, res) => {
     }
 });
 
+// แก้ไขรายละเอียดงานแผน TPM (ไม่กระทบสถานะ/วันที่เสร็จจริง)
+app.put('/api/plans/:id', upload.single('image'), async (req, res) => {
+    try {
+        const id = parseInt(req.params.id);
+        const { task_name, next_due_date, interval_months, spare_part_id, notes } = req.body;
+
+        const parsedIntervalRaw = parseInt(interval_months);
+        const parsedInterval = Number.isNaN(parsedIntervalRaw) ? 1 : parsedIntervalRaw;
+        const parsedSparePartId = (spare_part_id && spare_part_id !== '' && spare_part_id !== 'null' && spare_part_id !== 'undefined')
+            ? parseInt(spare_part_id)
+            : null;
+        const cleanNotes = (notes && notes.trim() !== '') ? notes : null;
+
+        if (req.file) {
+            const image_url = `/uploads/${req.file.filename}`;
+            await db.query(`
+                UPDATE plans SET task_name = $1, next_due_date = $2, interval_months = $3, spare_part_id = $4, notes = $5, image_url = $6
+                WHERE id = $7
+            `, [task_name, next_due_date, parsedInterval, parsedSparePartId, cleanNotes, image_url, id]);
+        } else {
+            await db.query(`
+                UPDATE plans SET task_name = $1, next_due_date = $2, interval_months = $3, spare_part_id = $4, notes = $5
+                WHERE id = $6
+            `, [task_name, next_due_date, parsedInterval, parsedSparePartId, cleanNotes, id]);
+        }
+
+        res.json({ success: true });
+    } catch (err) {
+        console.error('Update Plan Error:', err);
+        res.status(500).json({ success: false, message: err.message });
+    }
+});
+
 // อัปเดตสถานะงาน / ยืนยันทำเสร็จ แล้วคำนวณวันรอบถัดไปอัตโนมัติ
 app.patch('/api/plans/:id/status', async (req, res) => {
     const client = await db.connect();
