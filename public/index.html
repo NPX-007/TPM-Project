@@ -262,7 +262,11 @@
             <div class="card p-4">
                 <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
                     <h4 class="text-success m-0">✅ ประวัติงานบำรุงรักษาที่เสร็จสิ้นแล้ว</h4>
-                    <button class="btn btn-outline-danger btn-sm fw-bold write-permission" onclick="deleteSelectedHistory()">🗑️ ลบรายการที่เลือก</button>
+                    <div class="d-flex gap-2 flex-wrap">
+                        <button class="btn btn-success btn-sm fw-bold" onclick="downloadHistoryExcel()">📥 โหลด Excel</button>
+                        <button class="btn btn-danger btn-sm fw-bold" onclick="downloadHistoryPDF()">📥 โหลด PDF</button>
+                        <button class="btn btn-outline-danger btn-sm fw-bold write-permission" onclick="deleteSelectedHistory()">🗑️ ลบรายการที่เลือก</button>
+                    </div>
                 </div>
                 <div class="table-responsive">
                     <table class="table table-bordered text-center">
@@ -678,10 +682,13 @@
         }
 
         const container = document.createElement('div');
+        container.style.position = 'fixed';
+        container.style.top = '0';
+        container.style.left = '0';
+        container.style.zIndex = '-1';
+        container.style.width = '1200px';
         container.style.padding = '10px';
-        container.style.position = 'absolute';
-        container.style.left = '-9999px';
-        container.style.top = '-9999px';
+        container.style.background = '#ffffff';
 
         let tableHtml = `
             <h3 style="text-align: center; font-family: sans-serif; margin-bottom: 15px;">
@@ -734,7 +741,111 @@
             margin:       8,
             filename:     `Master_Plan_TPM_${new Date().toISOString().split('T')[0]}.pdf`,
             image:        { type: 'jpeg', quality: 0.98 },
-            html2canvas:  { scale: 2, useCORS: true },
+            html2canvas:  { scale: 2, useCORS: true, scrollX: 0, scrollY: 0 },
+            jsPDF:        { unit: 'mm', format: 'a4', orientation: 'landscape' }
+        };
+
+        html2pdf().set(opt).from(container).save().then(() => {
+            document.body.removeChild(container);
+        });
+    }
+
+    function downloadHistoryExcel() {
+        const checkedRows = document.querySelectorAll('.history-cb:checked');
+        if (checkedRows.length === 0) {
+            return alert('กรุณาติ๊กเลือกรายการที่ต้องการดาวน์โหลดก่อนครับ');
+        }
+
+        const data = [["กำหนดเดิม", "วันเสร็จจริง", "เครื่องจักร", "ชื่องาน", "รอบซ้ำ", "อะไหล่ที่ใช้", "หมายเหตุ"]];
+
+        checkedRows.forEach(cb => {
+            const tr = cb.closest('tr');
+            const cols = tr.children;
+            data.push([
+                cols[1].innerText,
+                cols[2].innerText,
+                cols[3].innerText,
+                cols[4].innerText,
+                cols[5].innerText,
+                cols[6].innerText,
+                cols[7].innerText
+            ]);
+        });
+
+        const ws = XLSX.utils.aoa_to_sheet(data);
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, "ประวัติงานเสร็จ");
+        XLSX.writeFile(wb, `History_TPM_${new Date().toISOString().split('T')[0]}.xlsx`);
+    }
+
+    function downloadHistoryPDF() {
+        const checkedRows = document.querySelectorAll('.history-cb:checked');
+        if (checkedRows.length === 0) {
+            return alert('กรุณาติ๊กเลือกรายการที่ต้องการดาวน์โหลดก่อนครับ');
+        }
+
+        const container = document.createElement('div');
+        container.style.position = 'fixed';
+        container.style.top = '0';
+        container.style.left = '0';
+        container.style.zIndex = '-1';
+        container.style.width = '1200px';
+        container.style.padding = '10px';
+        container.style.background = '#ffffff';
+
+        let tableHtml = `
+            <h3 style="text-align: center; font-family: sans-serif; margin-bottom: 15px;">
+                ตารางประวัติงานบำรุงรักษาที่เสร็จสิ้นแล้ว (TPM)
+            </h3>
+            <table style="width: 100%; border-collapse: collapse; font-size: 11px; font-family: sans-serif; border: 1px solid #444;">
+                <thead style="background-color: #198754; color: white;">
+                    <tr>
+                        <th style="padding: 8px; width: 12%; border: 1px solid #444; text-align: center;">กำหนดเดิม</th>
+                        <th style="padding: 8px; width: 12%; border: 1px solid #444; text-align: center;">วันเสร็จจริง</th>
+                        <th style="padding: 8px; width: 20%; border: 1px solid #444; text-align: left;">เครื่องจักร</th>
+                        <th style="padding: 8px; width: 20%; border: 1px solid #444; text-align: left;">ชื่องาน</th>
+                        <th style="padding: 8px; width: 10%; border: 1px solid #444; text-align: center;">รอบซ้ำ</th>
+                        <th style="padding: 8px; width: 14%; border: 1px solid #444; text-align: center;">อะไหล่ที่ใช้</th>
+                        <th style="padding: 8px; width: 12%; border: 1px solid #444; text-align: center;">หมายเหตุ</th>
+                    </tr>
+                </thead>
+                <tbody>
+        `;
+
+        checkedRows.forEach(cb => {
+            const tr = cb.closest('tr');
+            const cols = tr.children;
+
+            const dueDate = escapeHtml(cols[1].innerText);
+            const actualDate = escapeHtml(cols[2].innerText);
+            const machine = escapeHtml(cols[3].innerText);
+            const task = escapeHtml(cols[4].innerText);
+            const interval = escapeHtml(cols[5].innerText);
+            const spare = escapeHtml(cols[6].innerText);
+            const notes = escapeHtml(cols[7].innerText);
+
+            tableHtml += `
+                <tr>
+                    <td style="padding: 6px; border: 1px solid #ccc; text-align: center;">${dueDate}</td>
+                    <td style="padding: 6px; border: 1px solid #ccc; text-align: center;">${actualDate}</td>
+                    <td style="padding: 6px; border: 1px solid #ccc; text-align: left;">${machine}</td>
+                    <td style="padding: 6px; border: 1px solid #ccc; text-align: left;">${task}</td>
+                    <td style="padding: 6px; border: 1px solid #ccc; text-align: center;">${interval}</td>
+                    <td style="padding: 6px; border: 1px solid #ccc; text-align: center;">${spare}</td>
+                    <td style="padding: 6px; border: 1px solid #ccc; text-align: center;">${notes}</td>
+                </tr>
+            `;
+        });
+
+        tableHtml += `</tbody></table>`;
+        container.innerHTML = tableHtml;
+        document.body.appendChild(container);
+
+        const opt = {
+            margin:       8,
+            filename:     `History_TPM_${new Date().toISOString().split('T')[0]}.pdf`,
+            image:        { type: 'jpeg', quality: 0.98 },
+            html2canvas:  { scale: 2, useCORS: true, scrollX: 0, scrollY: 0 },
             jsPDF:        { unit: 'mm', format: 'a4', orientation: 'landscape' }
         };
 
